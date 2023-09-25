@@ -1,13 +1,10 @@
 import sys
 from PyQt5.QtWidgets import (QApplication, QMainWindow, QMenuBar, QAction, QToolBar, QVBoxLayout, QWidget, QLabel,
-                             QScrollArea, QLineEdit, QHBoxLayout, QCheckBox, QStatusBar, QMessageBox, QFileDialog, QDialog, QGroupBox, QGridLayout, QShortcut, QFontComboBox, QComboBox, QPushButton )
-from PyQt5 import QtCore, QtWidgets
-from PyQt5.QtCore import Qt
-from PyQt5.QtGui import QIcon, QKeySequence, QFont, QIntValidator, QPixmap
-from PyQt5.QtMultimedia import QSound
+                             QScrollArea, QLineEdit, QHBoxLayout, QStatusBar, QDialog, QGroupBox, QGridLayout,
+                             QShortcut, QComboBox, QPushButton, QFrame, QSplitter, QCheckBox, QDialogButtonBox, QSizePolicy)
+from PyQt5 import QtCore, QtWidgets, QtGui
+from PyQt5.QtGui import QIcon, QKeySequence, QIntValidator, QPixmap
 import os
-import tinytag
-import re
 import random
 import json
 import datetime
@@ -18,34 +15,37 @@ def read_archive_json():
         all_books_data = json.load(file)
         return all_books_data
 
+def write_update_to_the_archive_json(file_update):
+    archive_path = "dependence/ArcFiles/archive.json"
+    with open(archive_path, "w", encoding="utf-8") as file:
+        json.dump(file_update, file, ensure_ascii=False, indent=4)
+
 # פונקציה למחיקת ספר לפי ה-ID
 def delete_book_by_id(books_ids):
-    dialog3 = are_you_sure_window(books_ids)
+    dialog3 = Are_you_sure_window(books_ids)
     dialog3.exec_()
 
-    if dialog3.data:
-        data = read_archive_json()
+    if dialog3.sure_to_delete:
+        sure_to_delete = read_archive_json()
         for id in books_ids:
             # מצא את הספר ברשימת הספרים לפי ה-ID
-            for book in data["books"]:
+            for book in sure_to_delete["books"]:
                 if id == book['book_id']:
                     # מחק את הספר מהרשימה
-                    data["books"].remove(book)
+                    sure_to_delete["books"].remove(book)
                     break  # אחרי שמחקנו את הספר, אין טעם להמשיך לחפש
 
             # שמור את המידע חזרה לקובץ JSON
-            with open('dependence/ArcFiles/archive.json', 'w', encoding='utf-8') as file:
-                json.dump(data, file, ensure_ascii=False, indent=4)
-
-
+            write_update_to_the_archive_json(sure_to_delete)
 
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
 
-        self.group_boxes_to_clear = []
-        self.group_boxes = []
-        self.g = 0
+        self.general_widget_scrollArea = None
+        self.groupBoxes_to_clear = []
+        self.books_details_groupBoxes = []
+
         self.borrower_id = ""
         self.book_id = ""
         self.book_title = ""
@@ -64,7 +64,7 @@ class MainWindow(QMainWindow):
         self.borrower_name = ""
         self.remarks = ""
 
-        self.setWindowTitle("BookArchiveByOri")
+        self.setWindowTitle("ארכיון ספרים - בית יהודה")
         self.setGeometry(100, 100, 1500, 900)
 
         # Creating status bar object
@@ -73,35 +73,24 @@ class MainWindow(QMainWindow):
         # Setting text in status bar
         self.status_bar.showMessage("סטטוס: מוכן")
 
-        self.center_label = None
-        self.input_fields_layout = None
-        self.layout = None
-        self.drag_area = None
-        self.year, self.track_number, self.contributing_artists, self.album_artist, self.title, self.file_name = None, None, None, None, None, None
-
-        self.audio_files_paths = []   # Contains all the paths of the audio files displayed in the software
-        self.new_file_paths = []
-        self.new1_file_paths = []
-        self.input_fields = []
-        self.previous_names = {}
+        self.MainWindow_layout = None
 
         self.initui()
 
     def initui(self):
-        # Creating a widget for GUI components
-        central_widget = QWidget(self)
-        self.setCentralWidget(central_widget)
-        central_widget.setAcceptDrops(True)  # אפשר גרירה על האובייקט הראשי
-        central_widget.dragEnterEvent = self.dragEnterEvent
-        central_widget.dragLeaveEvent = self.dragLeaveEvent
-        central_widget.dropEvent = self.dropEvent
-        # Creating the main frame/tunnel
-        self.layout = QVBoxLayout(central_widget)
+        # Creating a widget that surrounds all the GUI components that will be in the window
+        # It's like a frame but invisible
+        MainWindow_central_widget = QWidget(self)
+        self.setCentralWidget(MainWindow_central_widget)
+
+        # Creating the main layout/tunnel/תַסדִיר according to which all components will be arranged
+        # In this case, they will be: groupBox ("מנוע חיפוש"), books_displaying_scrollArea
+        self.MainWindow_layout = QVBoxLayout(MainWindow_central_widget)
 
         self.create_bars()
-        self.add_sarching()
-
-        self.show()
+        self.create_search_engine_graphical_interface()
+        self.creating_a_frame_with_a_scroll_bar()
+        self.load_archive()
 
     def create_bars(self):
         # create a menu bar
@@ -109,7 +98,7 @@ class MainWindow(QMainWindow):
         file_menu = menu_bar.addMenu("קובץ")
 
         open_folder_action = QAction("בחר מתיקייה", self)
-        open_folder_action.triggered.connect(self.open_file)
+        #open_folder_action.triggered.connect(self.open_file)
         file_menu.addAction(open_folder_action)
 
         exit_action = QAction("יציאה", self)
@@ -118,7 +107,7 @@ class MainWindow(QMainWindow):
 
         tools_menu = menu_bar.addMenu("כלים")
         Manage_json_files_action = QAction("נהל קבצי json", self)
-        Manage_json_files_action.triggered.connect(self.manage_json_files)
+        #Manage_json_files_action.triggered.connect(self.manage_json_files)
         tools_menu.addAction(Manage_json_files_action)
 
         self.setMenuBar(menu_bar)
@@ -152,736 +141,568 @@ class MainWindow(QMainWindow):
         tool_bar.addAction(back_action)
 
 
-    def add_sarching(self):
-        # יצירת קופסת קבוצתית
-        group_box = QGroupBox("מנוע חיפוש", self)
+    def create_search_engine_graphical_interface(self):
+        # Create groupBox for the search engine
+        search_engine_groupBox = QGroupBox("מנוע חיפוש", self)
+        search_engine_groupBox.setAlignment(QtCore.Qt.AlignRight)   # Aline title to the right
+        # Add the components to MainWindow_layout
+        self.MainWindow_layout.addWidget(search_engine_groupBox)
 
-        grid_layout = QGridLayout(group_box)
+        # Create a grid layout to gut the components inside
+        search_groupBox_grid_layout = QGridLayout(search_engine_groupBox)
 
-        frame_2 = QWidget(group_box)
-        grid_layout.addWidget(frame_2, 1, 1)
+        # Create the top frame for the top search boxes line
+        top_frame_in_search_groupBox = QWidget(search_engine_groupBox)
+        search_groupBox_grid_layout.addWidget(top_frame_in_search_groupBox, 0, 1)
 
-        grid_layout_4 = QGridLayout(frame_2)
+        # Organize the components inside the top_frame_in_search_groupBox in grid order
+        top_frame_grid_layout = QGridLayout(top_frame_in_search_groupBox)
 
-        # שדה מדף
-        self.line_edit_shelf = QLineEdit(frame_2)
-        self.line_edit_shelf.textChanged.connect(self.start_search)
+        # book id field
+        self.line_edit_book_id = QLineEdit(top_frame_in_search_groupBox)
+        self.line_edit_book_id.textChanged.connect(self.load_archive)
+        self.line_edit_book_id.setObjectName("lineEdit")
+        self.line_edit_book_id.setPlaceholderText("הזן מזהה הספר")
+        top_frame_grid_layout.addWidget(self.line_edit_book_id, 1, 7, 1, 1)
+
+        # book neme field
+        self.line_edit_book_title = QLineEdit(top_frame_in_search_groupBox)
+        self.line_edit_book_title.textChanged.connect(self.load_archive)
+        self.line_edit_book_title.setObjectName("lineEdit")
+        self.line_edit_book_title.setPlaceholderText("הזן שם הספר")
+        top_frame_grid_layout.addWidget(self.line_edit_book_title, 1, 6, 1, 1)
+
+        # series name field
+        self.line_edit_series_name = QLineEdit(top_frame_in_search_groupBox)
+        self.line_edit_series_name.textChanged.connect(self.load_archive)
+        self.line_edit_series_name.setObjectName("lineEdit_2")
+        self.line_edit_series_name.setPlaceholderText("הזן שם הסדרה")
+        top_frame_grid_layout.addWidget(self.line_edit_series_name, 1, 5, 1, 1)
+
+        # series part field
+        self.line_edit_series_part = QLineEdit(top_frame_in_search_groupBox)
+        self.line_edit_series_part.textChanged.connect(self.load_archive)
+        self.line_edit_series_part.setObjectName("lineEdit_12")
+        self.line_edit_series_part.setPlaceholderText("הזן חלק בסדרה")
+        top_frame_grid_layout.addWidget(self.line_edit_series_part, 1, 4, 1, 1)
+
+        # grade field
+        self.line_edit_grade = QLineEdit(top_frame_in_search_groupBox)
+        self.line_edit_grade.textChanged.connect(self.load_archive)
+        self.line_edit_grade.setObjectName("lineEdit_grade")
+        self.line_edit_grade.setPlaceholderText("הזן כיתה")
+        top_frame_grid_layout.addWidget(self.line_edit_grade, 1, 3, 1, 1)
+
+        # age group field
+        self.line_edit_age_group = QLineEdit(top_frame_in_search_groupBox)
+        self.line_edit_age_group.textChanged.connect(self.load_archive)
+        self.line_edit_age_group.setObjectName("lineEdit_age_group")
+        self.line_edit_age_group.setPlaceholderText("הזן שכבת גיל")
+        top_frame_grid_layout.addWidget(self.line_edit_age_group, 1, 2, 1, 1)
+
+        # author field
+        self.line_edit_author = QLineEdit(top_frame_in_search_groupBox)
+        self.line_edit_author.textChanged.connect(self.load_archive)
+        self.line_edit_author.setObjectName("lineEdit_author")
+        self.line_edit_author.setPlaceholderText("הזן מחבר")
+        top_frame_grid_layout.addWidget(self.line_edit_author, 1, 1, 1, 1)
+
+        # Publisher field
+        self.line_edit_publisher = QLineEdit(top_frame_in_search_groupBox)
+        self.line_edit_publisher.textChanged.connect(self.load_archive)
+        self.line_edit_publisher.setObjectName("lineEdit_author")
+        self.line_edit_publisher.setPlaceholderText("הזן מוציא לאור")
+        top_frame_grid_layout.addWidget(self.line_edit_publisher, 1, 0, 1, 1)
+
+        # Create the lower frame for the lower search boxes line
+        lower_frame_in_search_groupBox = QWidget(search_engine_groupBox)
+        search_groupBox_grid_layout.addWidget(lower_frame_in_search_groupBox, 1, 1)
+
+        # Organize the components inside the lower_frame_in_search_groupBox in grid order
+        lower_frame_grid_layout = QGridLayout(lower_frame_in_search_groupBox)
+
+        # Shelf field
+        self.line_edit_shelf = QLineEdit(lower_frame_in_search_groupBox)
+        self.line_edit_shelf.textChanged.connect(self.load_archive)
         self.line_edit_shelf.setObjectName("lineEdit_11")
         self.line_edit_shelf.setPlaceholderText("הזן מדף")
-        grid_layout_4.addWidget(self.line_edit_shelf, 1, 8, 1, 1)
+        lower_frame_grid_layout.addWidget(self.line_edit_shelf, 1, 8, 1, 1)
 
-        # שדה כמות בארכיון
-        self.line_edit_amount_in_archive = QLineEdit(frame_2)
-        self.line_edit_amount_in_archive.textChanged.connect(self.start_search)
+        # Amount in archive field
+        self.line_edit_amount_in_archive = QLineEdit(lower_frame_in_search_groupBox)
+        self.line_edit_amount_in_archive.textChanged.connect(self.load_archive)
         self.line_edit_amount_in_archive.setObjectName("lineEdit_13")
         self.line_edit_amount_in_archive.setPlaceholderText("הזן כמות בארכיון")
-        grid_layout_4.addWidget(self.line_edit_amount_in_archive, 1, 7, 1, 1)
+        lower_frame_grid_layout.addWidget(self.line_edit_amount_in_archive, 1, 7, 1, 1)
 
-        # שדה כמות מושאלת
-        self.line_edit_is_borrowed = QLineEdit(frame_2)
-        self.line_edit_is_borrowed.textChanged.connect(self.start_search)
-        self.line_edit_is_borrowed.setObjectName("lineEdit_6")
-        self.line_edit_is_borrowed.setPlaceholderText("כמות מושאלת")
-        grid_layout_4.addWidget(self.line_edit_is_borrowed, 1, 6, 1, 1)
+        # is borrowed field
+        self.is_borrowed_combo_box = QComboBox(lower_frame_in_search_groupBox)
+        self.is_borrowed_combo_box.addItem("האם מושאל")
+        self.is_borrowed_combo_box.addItem("כן")
+        self.is_borrowed_combo_box.addItem("לא")
+        self.is_borrowed_combo_box.currentIndexChanged.connect(self.load_archive)
+        self.is_borrowed_combo_box.setPlaceholderText("האם מושאל")
+        lower_frame_grid_layout.addWidget(self.is_borrowed_combo_box, 1, 6, 1, 1)
 
-        # שדה מצב הספר
-        self.book_condition_combo_box = QComboBox(frame_2)
+        # book condition field
+        self.book_condition_combo_box = QComboBox(lower_frame_in_search_groupBox)
         self.book_condition_combo_box.addItem("בחר מצב ספר")
         self.book_condition_combo_box.addItem("חדש")
         self.book_condition_combo_box.addItem("משומש")
         self.book_condition_combo_box.addItem("פתור/כתוב")
         self.book_condition_combo_box.addItem("קרוע")
         self.book_condition_combo_box.addItem("לא ידוע")
-        self.book_condition_combo_box.currentIndexChanged.connect(self.start_search)
+        self.book_condition_combo_box.currentIndexChanged.connect(self.load_archive)
         self.book_condition_combo_box.setObjectName("fontComboBox_2")
         self.book_condition_combo_box.setPlaceholderText("בחר מצב ספר")
-        grid_layout_4.addWidget(self.book_condition_combo_box, 1, 5, 1, 1)
+        lower_frame_grid_layout.addWidget(self.book_condition_combo_box, 1, 5, 1, 1)
 
-        # שדה תאריך השאלה
-        self.line_edit_loaning_date = QLineEdit(frame_2)
-        self.line_edit_loaning_date.textChanged.connect(self.start_search)
+        # loaning date filed
+        self.line_edit_loaning_date = QLineEdit(lower_frame_in_search_groupBox)
+        self.line_edit_loaning_date.textChanged.connect(self.load_archive)
         self.line_edit_loaning_date.setObjectName("lineEdit_9")
         self.line_edit_loaning_date.setPlaceholderText("הזן תאריך השאלה")
-        grid_layout_4.addWidget(self.line_edit_loaning_date, 1, 4, 1, 1)
+        lower_frame_grid_layout.addWidget(self.line_edit_loaning_date, 1, 4, 1, 1)
 
-        # שדה סוג הספר
-        self.book_type_combo_box = QComboBox(frame_2)
+        # book type field
+        self.book_type_combo_box = QComboBox(lower_frame_in_search_groupBox)
         self.book_type_combo_box.addItem("בחר סוג ספר")
         self.book_type_combo_box.addItem("קודש")
         self.book_type_combo_box.addItem("כתיבה")
         self.book_type_combo_box.addItem("קריאה")
         self.book_type_combo_box.addItem("לימוד")
-        self.book_type_combo_box.currentIndexChanged.connect(self.start_search)
+        self.book_type_combo_box.addItem("אחר")
+        self.book_type_combo_box.currentIndexChanged.connect(self.load_archive)
         self.book_type_combo_box.setObjectName("fontComboBox")
         self.book_type_combo_box.setPlaceholderText("בחר סוג ספר")
-        grid_layout_4.addWidget(self.book_type_combo_box, 1, 3, 1, 1)
+        lower_frame_grid_layout.addWidget(self.book_type_combo_box, 1, 3, 1, 1)
 
-        # שדה שם השואל/הלוקח
-        self.line_edit_borrower_name = QLineEdit(frame_2)
-        self.line_edit_borrower_name.textChanged.connect(self.start_search)
+        # borrower name field
+        self.line_edit_borrower_name = QLineEdit(lower_frame_in_search_groupBox)
+        self.line_edit_borrower_name.textChanged.connect(self.load_archive)
         self.line_edit_borrower_name.setObjectName("lineEdit_10")
         self.line_edit_borrower_name.setPlaceholderText("הזן שם השואל/הלוקח")
-        grid_layout_4.addWidget(self.line_edit_borrower_name, 1, 2, 1, 1)
+        lower_frame_grid_layout.addWidget(self.line_edit_borrower_name, 1, 2, 1, 1)
 
-        # שדה תעודת זהות השואל
-        self.line_edit_borrower_id = QLineEdit(frame_2)
-        self.line_edit_borrower_id.textChanged.connect(self.start_search)
+        # borrower id field
+        self.line_edit_borrower_id = QLineEdit(lower_frame_in_search_groupBox)
+        self.line_edit_borrower_id.textChanged.connect(self.load_archive)
         self.line_edit_borrower_id.setObjectName("lineEdit_4")
         self.line_edit_borrower_id.setPlaceholderText("הזן תעודת זהות השואל")
-        grid_layout_4.addWidget(self.line_edit_borrower_id, 1, 1, 1, 1)
+        lower_frame_grid_layout.addWidget(self.line_edit_borrower_id, 1, 1, 1, 1)
 
-        # שדה הערות
-        self.line_edit_remarks = QLineEdit(frame_2)
-        self.line_edit_remarks.textChanged.connect(self.start_search)
+        # remarks field
+        self.line_edit_remarks = QLineEdit(lower_frame_in_search_groupBox)
+        self.line_edit_remarks.textChanged.connect(self.load_archive)
         self.line_edit_remarks.setObjectName("lineEdit_4")
         self.line_edit_remarks.setPlaceholderText("הזן הערות (אם יש)")
-        grid_layout_4.addWidget(self.line_edit_remarks, 1, 0, 1, 1)
+        lower_frame_grid_layout.addWidget(self.line_edit_remarks, 1, 0, 1, 1)
 
-        frame = QWidget(group_box)
-        grid_layout.addWidget(frame, 0, 1)
+    def creating_a_frame_with_a_scroll_bar(self):
+        # Creating a ScrollArea with a scroll bar for displaying the books details
+        self.books_displaying_scrollArea = QtWidgets.QScrollArea(self)
+        self.books_displaying_scrollArea.setWidgetResizable(True)
+        # add the scrollarea to the MainWindow_layout
+        self.MainWindow_layout.addWidget(self.books_displaying_scrollArea)
 
-        grid_layout_3 = QGridLayout(frame)
+        # Creating a widget that surrounds all the GUI components that will be in the books_displaying_scrollArea
+        # It's like a frame but invisible
+        self.general_widget_scrollArea = QWidget()
+        self.general_widget_scrollArea.setGeometry(QtCore.QRect(0, 0, 1539, 507))
+        self.general_widget_scrollArea.setObjectName("general_widget_scrollArea")
 
-        # שדה מזהה הספר
-        self.line_edit_book_id = QLineEdit(frame)
-        self.line_edit_book_id.textChanged.connect(self.start_search)
-        self.line_edit_book_id.setObjectName("lineEdit")
-        self.line_edit_book_id.setPlaceholderText("הזן מזהה הספר")
-        grid_layout_3.addWidget(self.line_edit_book_id, 1, 7, 1, 1)
+        # Inserts general_widget_scrollArea into books_displaying_scrollArea and thus sets the scrolling
+        self.books_displaying_scrollArea.setWidget(self.general_widget_scrollArea)
 
-        # שדה שם הספר
-        self.line_edit_book_title = QLineEdit(frame)
-        self.line_edit_book_title.textChanged.connect(self.start_search)
-        self.line_edit_book_title.setObjectName("lineEdit")
-        self.line_edit_book_title.setPlaceholderText("הזן שם הספר")
-        grid_layout_3.addWidget(self.line_edit_book_title, 1, 6, 1, 1)
+        # Create first splitter to attach the books_details_groupBoxes to the corners of general_widget_scrollArea
+        self.Main_splitter = QSplitter(self.general_widget_scrollArea)
+        self.Main_splitter.setOrientation(QtCore.Qt.Horizontal)
 
-        # שדה שם הסדרה
-        self.line_edit_series_name = QLineEdit(frame)
-        self.line_edit_series_name.textChanged.connect(self.start_search)
-        self.line_edit_series_name.setObjectName("lineEdit_2")
-        self.line_edit_series_name.setPlaceholderText("הזן שם הסדרה")
-        grid_layout_3.addWidget(self.line_edit_series_name, 1, 5, 1, 1)
+        # Organize the components inside the general_widget_scrollArea in grid order
+        self.general_widget_gridLayout = QGridLayout(self.general_widget_scrollArea)
+        self.general_widget_gridLayout.addWidget(self.Main_splitter, 0, 0, 1, 1)
 
-        # שדה חלק בסדרה
-        self.line_edit_series_part = QLineEdit(frame)
-        self.line_edit_series_part.textChanged.connect(self.start_search)
-        self.line_edit_series_part.setObjectName("lineEdit_12")
-        self.line_edit_series_part.setPlaceholderText("הזן חלק בסדרה")
-        grid_layout_3.addWidget(self.line_edit_series_part, 1, 4, 1, 1)
+        # Create the second splitter to split between every group box
+        self.groupBoxes_splitter = QSplitter(self.Main_splitter)
+        self.groupBoxes_splitter.setOrientation(QtCore.Qt.Horizontal)
+        self.groupBoxes_splitter.setOpaqueResize(True)
+        self.groupBoxes_splitter.setChildrenCollapsible(False)
 
-        # שדה כיתה
-        self.line_edit_grade = QLineEdit(frame)
-        self.line_edit_grade.textChanged.connect(self.start_search)
-        self.line_edit_grade.setObjectName("lineEdit_grade")
-        self.line_edit_grade.setPlaceholderText("הזן כיתה")
-        grid_layout_3.addWidget(self.line_edit_grade, 1, 3, 1, 1)
+        # Create group boxes and insert them into the splitter:
+        # remarks
+        self.remarks_groupBox = QtWidgets.QGroupBox(self.groupBoxes_splitter)
+        self.remarks_groupBox.setAlignment(QtCore.Qt.AlignCenter)
+        self.remarks_groupBox.setFlat(True)
+        self.remarks_groupBox.setTitle("הערות")
+        self.books_details_groupBoxes.append(self.remarks_groupBox)
 
-        # שדה שכבת גיל
-        self.line_edit_age_group = QLineEdit(frame)
-        self.line_edit_age_group.textChanged.connect(self.start_search)
-        self.line_edit_age_group.setObjectName("lineEdit_age_group")
-        self.line_edit_age_group.setPlaceholderText("הזן שכבת גיל")
-        grid_layout_3.addWidget(self.line_edit_age_group, 1, 2, 1, 1)
+        self.remarks_groupBox_gridLayout = QGridLayout(self.remarks_groupBox)
+        self.remarks_groupBox_gridLayout.setContentsMargins(0, -1, 0, -1)
+        self.groupBoxes_to_clear.append(self.remarks_groupBox_gridLayout)
 
-        # שדה מחבר
-        self.line_edit_author = QLineEdit(frame)
-        self.line_edit_author.textChanged.connect(self.start_search)
-        self.line_edit_author.setObjectName("lineEdit_author")
-        self.line_edit_author.setPlaceholderText("הזן מחבר")
-        grid_layout_3.addWidget(self.line_edit_author, 1, 1, 1, 1)
+        # borrower id
+        self.borrower_id_groupBox = QtWidgets.QGroupBox(self.groupBoxes_splitter)
+        self.borrower_id_groupBox.setAlignment(QtCore.Qt.AlignCenter)
+        self.borrower_id_groupBox.setFlat(True)
+        self.borrower_id_groupBox.setTitle("תעודת זהות")
+        self.books_details_groupBoxes.append(self.borrower_id_groupBox)
 
-        # שדה מוציא לאור
-        self.line_edit_publisher = QLineEdit(frame)
-        self.line_edit_publisher.textChanged.connect(self.start_search)
-        self.line_edit_publisher.setObjectName("lineEdit_author")
-        self.line_edit_publisher.setPlaceholderText("הזן מוציא לאור")
-        grid_layout_3.addWidget(self.line_edit_publisher, 1, 0, 1, 1)
+        self.borrower_id_groupBox_gridLayout = QGridLayout(self.borrower_id_groupBox)
+        self.borrower_id_groupBox_gridLayout.setContentsMargins(0, -1, 0, -1)
+        self.groupBoxes_to_clear.append(self.borrower_id_groupBox_gridLayout)
 
+        # borrower name
+        self.borrower_name_groupBox = QtWidgets.QGroupBox(self.groupBoxes_splitter)
+        self.borrower_name_groupBox.setAlignment(QtCore.Qt.AlignCenter)
+        self.borrower_name_groupBox.setFlat(True)
+        self.borrower_name_groupBox.setTitle("שם השואל/הלוקח")
+        self.books_details_groupBoxes.append(self.borrower_name_groupBox)
 
-        # הוספת הרכיבים לממשק המשתמש שלך
-        self.layout.addWidget(group_box)
-        self.creating_a_frame_with_a_scroll_bar()
-        self.load_archive()
+        self.borrower_name_groupBox_gridLayout = QGridLayout(self.borrower_name_groupBox)
+        self.borrower_name_groupBox_gridLayout.setContentsMargins(0, -1, 0, -1)
+        self.groupBoxes_to_clear.append(self.borrower_name_groupBox_gridLayout)
 
-    def start_search(self):
-        # Retrieve the text from all the QLineEdit widgets
-        self.remarks = self.line_edit_remarks.text()
-        self.borrower_id = self.line_edit_borrower_id.text()
-        self.borrower_name = self.line_edit_borrower_name.text()
-        self.book_type = self.book_type_combo_box.currentText()
-        self.loaning_date = self.line_edit_loaning_date.text()
-        self.book_condition = self.book_condition_combo_box.currentText()
-        self.is_borrowed = self.line_edit_is_borrowed.text()
-        self.amount_in_archive = self.line_edit_amount_in_archive.text()
-        self.shelf = self.line_edit_shelf.text()
-        self.publisher = self.line_edit_publisher.text()
-        self.author = self.line_edit_author.text()
-        self.age_group = self.line_edit_age_group.text()
-        self.grade = self.line_edit_grade.text()
-        self.series_part = self.line_edit_series_part.text()
-        self.series_name = self.line_edit_series_name.text()
-        self.book_title = self.line_edit_book_title.text()
-        self.book_id = self.line_edit_book_id.text()
+        # book type
+        self.book_type_groupBox = QtWidgets.QGroupBox(self.groupBoxes_splitter)
+        self.book_type_groupBox.setAlignment(QtCore.Qt.AlignCenter)
+        self.book_type_groupBox.setFlat(True)
+        self.book_type_groupBox.setTitle("סוג הספר")
+        self.books_details_groupBoxes.append(self.book_type_groupBox)
 
-        self.load_archive()
+        self.book_type_groupBox_gridLayout = QGridLayout(self.book_type_groupBox)
+        self.book_type_groupBox_gridLayout.setContentsMargins(0, -1, 0, -1)
+        self.groupBoxes_to_clear.append(self.book_type_groupBox_gridLayout)
+
+        # loaning date
+        self.loaning_date_groupBox = QtWidgets.QGroupBox(self.groupBoxes_splitter)
+        self.loaning_date_groupBox.setEnabled(True)
+        self.loaning_date_groupBox.setAlignment(QtCore.Qt.AlignCenter)
+        self.loaning_date_groupBox.setFlat(True)
+        self.loaning_date_groupBox.setTitle("תאריך השאלה")
+        self.books_details_groupBoxes.append(self.loaning_date_groupBox)
+
+        self.loaning_date_groupBox_gridLayout = QGridLayout(self.loaning_date_groupBox)
+        self.loaning_date_groupBox_gridLayout.setContentsMargins(0, -1, 0, -1)
+        self.groupBoxes_to_clear.append(self.loaning_date_groupBox_gridLayout)
+
+        # book condition
+        self.book_condition_groupBox = QtWidgets.QGroupBox(self.groupBoxes_splitter)
+        self.book_condition_groupBox.setAlignment(QtCore.Qt.AlignCenter)
+        self.book_condition_groupBox.setFlat(True)
+        self.book_condition_groupBox.setTitle("מצב הספר")
+        self.books_details_groupBoxes.append(self.book_condition_groupBox)
+
+        self.book_condition_groupBox_gridLayout = QGridLayout(self.book_condition_groupBox)
+        self.book_condition_groupBox_gridLayout.setContentsMargins(0, -1, 0, -1)
+        self.groupBoxes_to_clear.append(self.book_condition_groupBox_gridLayout)
+
+        # is borrowed
+        self.is_borrowed_groupBox = QtWidgets.QGroupBox(self.groupBoxes_splitter)
+        self.is_borrowed_groupBox.setLayoutDirection(QtCore.Qt.RightToLeft)
+        self.is_borrowed_groupBox.setAlignment(QtCore.Qt.AlignCenter)
+        self.is_borrowed_groupBox.setFlat(True)
+        self.is_borrowed_groupBox.setTitle("מושאל")
+        self.books_details_groupBoxes.append(self.is_borrowed_groupBox)
+
+        self.is_borrowed_groupBox_gridLayout = QGridLayout(self.is_borrowed_groupBox)
+        self.is_borrowed_groupBox_gridLayout.setContentsMargins(0, -1, 0, -1)
+        self.groupBoxes_to_clear.append(self.is_borrowed_groupBox_gridLayout)
+
+        # amount in archive
+        self.amount_in_archive_groupBox = QtWidgets.QGroupBox(self.groupBoxes_splitter)
+        self.amount_in_archive_groupBox.setAlignment(QtCore.Qt.AlignCenter)
+        self.amount_in_archive_groupBox.setFlat(True)
+        self.amount_in_archive_groupBox.setTitle("כמות בארכיון")
+        self.books_details_groupBoxes.append(self.amount_in_archive_groupBox)
+
+        self.amount_in_archive_groupBox_gridLayout = QGridLayout(self.amount_in_archive_groupBox)
+        self.amount_in_archive_groupBox_gridLayout.setContentsMargins(0, -1, 0, -1)
+        self.groupBoxes_to_clear.append(self.amount_in_archive_groupBox_gridLayout)
+
+        # shelf
+        self.shelf_groupBox = QtWidgets.QGroupBox(self.groupBoxes_splitter)
+        self.shelf_groupBox.setAlignment(QtCore.Qt.AlignCenter)
+        self.shelf_groupBox.setFlat(True)
+        self.shelf_groupBox.setTitle("מדף")
+        self.books_details_groupBoxes.append(self.shelf_groupBox)
+
+        self.shelf_groupBox_gridLayout = QGridLayout(self.shelf_groupBox)
+        self.shelf_groupBox_gridLayout.setContentsMargins(0, -1, 0, -1)
+        self.groupBoxes_to_clear.append(self.shelf_groupBox_gridLayout)
+
+        # publisher
+        self.publisher_groupBox = QtWidgets.QGroupBox(self.groupBoxes_splitter)
+        self.publisher_groupBox.setAlignment(QtCore.Qt.AlignCenter)
+        self.publisher_groupBox.setFlat(True)
+        self.publisher_groupBox.setTitle("מוציא לאור")
+        self.books_details_groupBoxes.append(self.publisher_groupBox)
+
+        self.publisher_groupBox_gridLayout = QGridLayout(self.publisher_groupBox)
+        self.publisher_groupBox_gridLayout.setContentsMargins(0, -1, 0, -1)
+        self.groupBoxes_to_clear.append(self.publisher_groupBox_gridLayout)
+
+        # author
+        self.author_groupBox = QtWidgets.QGroupBox(self.groupBoxes_splitter)
+        self.author_groupBox.setAlignment(QtCore.Qt.AlignCenter)
+        self.author_groupBox.setFlat(True)
+        self.author_groupBox.setTitle("מחבר")
+        self.books_details_groupBoxes.append(self.author_groupBox)
+
+        self.author_groupBox_gridLayout = QGridLayout(self.author_groupBox)
+        self.author_groupBox_gridLayout.setContentsMargins(0, -1, 0, -1)
+        self.groupBoxes_to_clear.append(self.author_groupBox_gridLayout)
+
+        # age group
+        self.age_group_groupBox = QtWidgets.QGroupBox(self.groupBoxes_splitter)
+        self.age_group_groupBox.setAlignment(QtCore.Qt.AlignCenter)
+        self.age_group_groupBox.setFlat(True)
+        self.age_group_groupBox.setTitle("שכבת גיל")
+        self.books_details_groupBoxes.append(self.age_group_groupBox)
+
+        self.age_group_groupBox_gridLayout = QGridLayout(self.age_group_groupBox)
+        self.age_group_groupBox_gridLayout.setContentsMargins(0, -1, 0, -1)
+        self.groupBoxes_to_clear.append(self.age_group_groupBox_gridLayout)
+
+        # grade
+        self.grade_groupBox = QtWidgets.QGroupBox(self.groupBoxes_splitter)
+        self.grade_groupBox.setAlignment(QtCore.Qt.AlignCenter)
+        self.grade_groupBox.setFlat(True)
+        self.grade_groupBox.setTitle("כיתה")
+        self.books_details_groupBoxes.append(self.grade_groupBox)
+
+        self.grade_groupBox_gridLayout = QGridLayout(self.grade_groupBox)
+        self.grade_groupBox_gridLayout.setContentsMargins(0, -1, 0, -1)
+        self.groupBoxes_to_clear.append(self.grade_groupBox_gridLayout)
+
+        # series part
+        self.series_part_groupBox = QtWidgets.QGroupBox(self.groupBoxes_splitter)
+        self.series_part_groupBox.setAlignment(QtCore.Qt.AlignCenter)
+        self.series_part_groupBox.setFlat(True)
+        self.series_part_groupBox.setTitle("חלק בסדרה")
+        self.books_details_groupBoxes.append(self.series_part_groupBox)
+
+        self.series_part_groupBox_gridLayout = QGridLayout(self.series_part_groupBox)
+        self.series_part_groupBox_gridLayout.setContentsMargins(0, -1, 0, -1)
+        self.groupBoxes_to_clear.append(self.series_part_groupBox_gridLayout)
+
+        # series name
+        self.series_name_groupBox = QtWidgets.QGroupBox(self.groupBoxes_splitter)
+        self.series_name_groupBox.setAlignment(QtCore.Qt.AlignCenter)
+        self.series_name_groupBox.setFlat(True)
+        self.series_name_groupBox.setTitle("שם הסדרה")
+        self.books_details_groupBoxes.append(self.series_name_groupBox)
+
+        self.series_name_groupBox_gridLayout = QGridLayout(self.series_name_groupBox)
+        self.series_name_groupBox_gridLayout.setContentsMargins(0, -1, 0, -1)
+        self.groupBoxes_to_clear.append(self.series_name_groupBox_gridLayout)
+
+        # book name
+        self.book_name_groupBox = QtWidgets.QGroupBox(self.groupBoxes_splitter)
+        self.book_name_groupBox.setAlignment(QtCore.Qt.AlignCenter)
+        self.book_name_groupBox.setFlat(True)
+        self.book_name_groupBox.setTitle("שם הספר")
+        self.books_details_groupBoxes.append(self.book_name_groupBox)
+
+        self.book_name_groupBox_gridLayout = QGridLayout(self.book_name_groupBox)
+        self.book_name_groupBox_gridLayout.setContentsMargins(0, -1, 0, -1)
+        self.groupBoxes_to_clear.append(self.book_name_groupBox_gridLayout)
+
+        # book_id
+        self.book_id_groupBox = QtWidgets.QGroupBox(self.groupBoxes_splitter)
+        self.book_id_groupBox.setAlignment(QtCore.Qt.AlignCenter)
+        self.book_id_groupBox.setFlat(True)
+        self.book_id_groupBox.setTitle("מזהה")
+        self.books_details_groupBoxes.append(self.book_id_groupBox)
+
+        self.book_id_groupBox_gridLayout = QGridLayout(self.book_id_groupBox)
+        self.book_id_groupBox_gridLayout.setContentsMargins(0, -1, 0, -1)
+        self.groupBoxes_to_clear.append(self.book_id_groupBox_gridLayout)
+
+        # tools
+        self.tools_groupBox = QtWidgets.QGroupBox(self.groupBoxes_splitter)
+        self.tools_groupBox.setAlignment(QtCore.Qt.AlignCenter)
+        self.tools_groupBox.setFlat(True)
+        self.tools_groupBox.setTitle("כלים")
+        self.tools_groupBox.setObjectName("tools_groupBox")
+        self.books_details_groupBoxes.append(self.tools_groupBox)
+
+        self.tools_groupBox_gridLayout = QGridLayout(self.tools_groupBox)
+        self.tools_groupBox_gridLayout.setContentsMargins(0, -1, 0, -1)
+        self.groupBoxes_to_clear.append(self.tools_groupBox_gridLayout)
 
     def load_archive(self):
+        self.clear_books_details_groupBoxes()
+        self.calculate_each_book_amount_in_the_archive()
 
-        self.count_books_with_conditions()
-        if self.g >= 1:
-            for gr in self.group_boxes_to_clear:
-                layout = gr.layout()
-                if layout is not None:
-                    if layout.count() >= 1:
-                        while layout.count():
-                            item = layout.takeAt(0)
-                            if item.widget():
-                                try:
-                                    item.widget().deleteLater()
-                                except:
-                                    print("4")
-                    else:
-                        print("adsasd")
-
-        self.g += 1
-
-        """
-        self.clearLayout(self.input_fields_layout)
-
-        self.data = read_archive_json()
-
-        for book in self.data.get("books", []):
-            row_layout = QHBoxLayout()  # יצירת אובייקט עבור שורה חדשה
-
-            keys = list(book.keys())  # Get all keys as a list
-            second_key = keys[0]  # Get the second key
-
+        archive_file_content = read_archive_json()
+        for book in archive_file_content["books"]:
+            # A condition that compares the content written in the search to the details of the books
             if (
-                    (self.book_id == "" or self.book_id in book["book_id"]) and
-                    (self.book_title == "" or self.book_title in book["book_title"]) and
-                    (self.book_type == "בחר סוג ספר" or self.book_type in book["book_type"]) and
-                    (self.author == "" or self.author in book["author"]) and
-                    (self.publisher == "" or self.publisher in book["publisher"]) and
-                    (self.series_name == "" or self.series_name in book["series_name"]) and
-                    (self.series_part == "" or self.series_part in book["series_part"]) and
-                    (self.grade == "" or self.grade in book["grade"]) and
-                    (self.age_group == "" or self.age_group in book["age_group"]) and
-                    (self.is_borrowed == "" or self.is_borrowed in book["is_borrowed"]) and
-                    (self.borrower_name == "" or self.borrower_name in book["borrower_name"]) and
-                    (self.loaning_date == "" or self.loaning_date in book["loaning_date"]) and
-                    (self.shelf == "" or self.shelf in book["shelf"]) and
-                    (self.amount_in_archive == "" or self.amount_in_archive in book["amount_in_archive"]) and
-                    (self.book_condition == "בחר מצב ספר" or self.book_condition in book["book_condition"]) and
-                    (self.borrower_id == "" or self.borrower_id in book["borrower_id"]) and
-                    (self.remarks == "" or self.remarks in book["remarks"])
+                    (self.line_edit_book_id.text() == "" or self.line_edit_book_id.text() in book["book_id"]) and
+                    (self.line_edit_book_title.text() == "" or self.line_edit_book_title.text() in book["book_title"]) and
+                    (self.book_type_combo_box.currentText() == "בחר סוג ספר" or self.book_type_combo_box.currentText() in book["book_type"]) and
+                    (self.line_edit_author.text() == "" or self.line_edit_author.text() in book["author"]) and
+                    (self.line_edit_publisher.text() == "" or self.line_edit_publisher.text() in book["publisher"]) and
+                    (self.line_edit_series_name.text() == "" or self.line_edit_series_name.text() in book["series_name"]) and
+                    (self.line_edit_series_part.text() == "" or self.line_edit_series_part.text() in book["series_part"]) and
+                    (self.line_edit_grade.text() == "" or self.line_edit_grade.text() in book["grade"]) and
+                    (self.line_edit_age_group.text() == "" or self.line_edit_age_group.text() in book["age_group"]) and
+                    (self.is_borrowed_combo_box.currentText() == "האם מושאל" or self.is_borrowed_combo_box.currentText() in book["is_borrowed"]) and
+                    (self.line_edit_borrower_name.text() == "" or self.line_edit_borrower_name.text() in book["borrower_name"]) and
+                    (self.line_edit_loaning_date.text() == "" or self.line_edit_loaning_date.text() in book["loaning_date"]) and
+                    (self.line_edit_shelf.text() == "" or self.line_edit_shelf.text() in book["shelf"]) and
+                    (self.line_edit_amount_in_archive.text() == "" or self.line_edit_amount_in_archive.text() in book["amount_in_archive"]) and
+                    (self.book_condition_combo_box.currentText() == "בחר מצב ספר" or self.book_condition_combo_box.currentText() in book["book_condition"]) and
+                    (self.line_edit_borrower_id.text() == "" or self.line_edit_borrower_id.text() in book["borrower_id"]) and
+                    (self.line_edit_remarks.text() == "" or self.line_edit_remarks.text() in book["remarks"])
             ):
 
-                # רשימת המידע שברצונך ליצור QLineEdit לכל פריט בה
-                data_to_display = [
-                    book["remarks"],
-                    book["borrower_id"],
-                    book["borrower_name"],
-                    book["book_type"],
-                    book["loaning_date"],
-                    book["book_condition"],
-                    book["is_borrowed"],
-                    book["amount_in_archive"],
-                    book["shelf"],
-                    book["publisher"],
-                    book["author"],
-                    book["age_group"],
-                    book["grade"],
-                    book["series_part"],
-                    book["series_name"],
-                    book["book_title"],
-                    book["book_id"]
-                ]
+                # empty dictionary
+                book_data = {}
+                # Adding the book details to the dictionary
+                book_data["remarks"] = book["remarks"]
+                book_data["borrower_id"] = book["borrower_id"]
+                book_data["borrower_name"] = book["borrower_name"]
+                book_data["book_type"] = book["book_type"]
+                book_data["loaning_date"] = book["loaning_date"]
+                book_data["book_condition"] = book["book_condition"]
+                book_data["is_borrowed"] = book["is_borrowed"]
+                book_data["amount_in_archive"] = book["amount_in_archive"]
+                book_data["shelf"] = book["shelf"]
+                book_data["publisher"] = book["publisher"]
+                book_data["author"] = book["author"]
+                book_data["age_group"] = book["age_group"]
+                book_data["grade"] = book["grade"]
+                book_data["series_part"] = book["series_part"]
+                book_data["series_name"] = book["series_name"]
+                book_data["book_title"] = book["book_title"]
+                book_data["book_id"] = book["book_id"]
 
-                for i, data in enumerate(data_to_display):
-                    edit_line = QLineEdit(data, self)
+                # A loop that goes through every detail in the dictionary and puts it inside QLineEdit
+                for key, value in enumerate(book_data):
+                    edit_line = QLineEdit(book_data[value], self)
                     edit_line.setReadOnly(True)
-                    row_layout.addWidget(edit_line)
-
-                    # בדוק האם זהו ה-QLineEdit החמישי בשורה
-                    if i == 6:
-                        if data == "כן":
-                            edit_line.setStyleSheet("background-color: #EF9A9A;")
-                        elif data == "לא":
+                    edit_line.setToolTip(str(self.books_details_groupBoxes[key].title()) + ": " + str(book_data[value]))
+                    self.books_details_groupBoxes[key].layout().addWidget(edit_line)
+                    # A condition that changes the background color of is_borrowed if the book is borrowed
+                    if value == "is_borrowed":
+                        edit_line.setStyleSheet("background-color: #EF9A9A;")
+                        if book_data[value] == "לא":
                             edit_line.setStyleSheet("background-color: #C5E1A5;")
-
-                # הוסף את הכפתור והצמיד אירוע חיצוני לו כדי להדפיס את book_id
-                self.edit_button = QPushButton(QIcon(r'dependence\images\book_setting.png'), '', self)
-                self.edit_button.setStyleSheet('background-color: transparent; border: 1px solid #d0d0d0; border-radius: 3px;')
-                self.edit_button.setFixedSize(20, 20)
-                self.edit_button.clicked.connect(lambda state, book_id=book["book_id"]: self.edit_book_data(book_id))
-                row_layout.addWidget(self.edit_button)
-
-            self.input_fields_layout.addLayout(row_layout)
-        self.Add_a_label_to_the_frame()
-        """
-
-
-
-
-        self.data = read_archive_json()
-        # הוסף lineedit עבור כל שם ספר לתוך ה groupBox "שם הספר"
-        for book in self.data.get("books", []):
-            if (
-                    (self.book_id == "" or self.book_id in book["book_id"]) and
-                    (self.book_title == "" or self.book_title in book["book_title"]) and
-                    (self.book_type == "בחר סוג ספר" or self.book_type in book["book_type"]) and
-                    (self.author == "" or self.author in book["author"]) and
-                    (self.publisher == "" or self.publisher in book["publisher"]) and
-                    (self.series_name == "" or self.series_name in book["series_name"]) and
-                    (self.series_part == "" or self.series_part in book["series_part"]) and
-                    (self.grade == "" or self.grade in book["grade"]) and
-                    (self.age_group == "" or self.age_group in book["age_group"]) and
-                    (self.is_borrowed == "" or self.is_borrowed in book["is_borrowed"]) and
-                    (self.borrower_name == "" or self.borrower_name in book["borrower_name"]) and
-                    (self.loaning_date == "" or self.loaning_date in book["loaning_date"]) and
-                    (self.shelf == "" or self.shelf in book["shelf"]) and
-                    (self.amount_in_archive == "" or self.amount_in_archive in book["amount_in_archive"]) and
-                    (self.book_condition == "בחר מצב ספר" or self.book_condition in book["book_condition"]) and
-                    (self.borrower_id == "" or self.borrower_id in book["borrower_id"]) and
-                    (self.remarks == "" or self.remarks in book["remarks"])
-            ):
-
-                data_to_display = [
-                    book["remarks"],
-                    book["borrower_id"],
-                    book["borrower_name"],
-                    book["book_type"],
-                    book["loaning_date"],
-                    book["book_condition"],
-                    book["is_borrowed"],
-                    book["amount_in_archive"],
-                    book["shelf"],
-                    book["publisher"],
-                    book["author"],
-                    book["age_group"],
-                    book["grade"],
-                    book["series_part"],
-                    book["series_name"],
-                    book["book_title"],
-                    book["book_id"]
-                ]
-
-
-                # פתח את הקובץ JSON
-                with open('dependence/ArcFiles/archive.json', 'r', encoding='utf-8') as json_file:
-                    data = json.load(json_file)
-                for i, data in enumerate(data_to_display):
-                    edit_line = QLineEdit(data, self)
-                    edit_line.setReadOnly(True)
-                    edit_line.setToolTip(str(self.group_boxes[i].title()) + ": " + str(data))
-                    self.group_boxes[i].layout().addWidget(edit_line)
-
-                    # בדוק האם זהו ה-QLineEdit החמישי בשורה
-                    if i == 6:
-                        if data == "כן":
-                            edit_line.setStyleSheet("background-color: #EF9A9A;")
-                        elif data == "לא":
-                            edit_line.setStyleSheet("background-color: #C5E1A5;")
-
 
                 # Creating a book_setting button
                 edit_button = QPushButton(QIcon(r'dependence\images\book_setting.png'), '')
                 edit_button.setStyleSheet(
                     'background-color: transparent; border: 1px solid #d0d0d0; border-radius: 3px;')
                 edit_button.setFixedSize(21, 21)
-                edit_button.clicked.connect(lambda state, book_id=book["book_id"]: self.edit_book_data(book_id))
-                self.group_boxes[17].layout().addWidget(edit_button)
+                edit_button.clicked.connect(lambda state, this_book_id=book["book_id"]: self.edit_book_data(this_book_id))
+                for groupBox in self.books_details_groupBoxes:
+                    if groupBox.objectName() == "tools_groupBox":
+                        groupBox.layout().addWidget(edit_button)
 
-        for group_box in self.group_boxes:
+        # Creating an empty label inside each groupBox to attach the lineedits
+        for groupBox in self.books_details_groupBoxes:
             name_label = QLabel("")
             name_label.setAlignment(QtCore.Qt.AlignTop)
-            group_box.layout().addWidget(name_label)
-    #  "A function that returns the numerical amount of books in which the key values book_title, series_name,
-    #  series_part, grade, age_group, author, and publisher are all the same."
-    def count_books_with_conditions(self):
-        books_group = []
+            groupBox.layout().addWidget(name_label)
 
-        books_data = read_archive_json()
+        """
+        # A loop that hides all the G from the display,
+        # this loop is useful in the future for displaying the label "No books matching the search were found"
+        for groupBox in self.books_details_groupBoxes:
+            groupBox.setVisible(False)  # להסתיר את הרכיב
+        """
 
-        # יצירת משתנה לשמירת מספר הספרים התואמים את התנאים
-        count = 0
+    def clear_books_details_groupBoxes(self):
+        for groupBox in self.books_details_groupBoxes:
+            layout = groupBox.layout()
+            if layout is not None:
+                while layout.count():
+                    item = layout.takeAt(0)
+                    if item.widget():
+                        item.widget().deleteLater()
 
-        # לולאה עבור כל ספר ברשימה
-        for book in books_data["books"]:
-            if book["book_id"] not in books_group:
-                books_group = []
-                common_book_title = book["book_title"]
-                common_series_name = book["series_name"]
-                common_series_part = book["series_part"]
-                common_grade = book["grade"]
-                common_age_group = book["age_group"]
-                common_author = book["author"]
-                common_publisher = book["publisher"]
-                # אם הערכים המשותפים בין כל הספרים שונים מהספר הראשון, הספר אינו עומד בתנאים
-                for book in books_data["books"]:
+    #  A function that calculates the amount of each book in the archive by summing the values:
+    #  "book_title, series_name, series_part, grade, age_group, author, and publisher"
+    #  and then edits the amount_in_archive value in each book accordingly.
+    def calculate_each_book_amount_in_the_archive(self):
+        duplicate_book_IDs = []
+        all_books = read_archive_json()
+        # A loop that goes through all the books
+        for book in all_books["books"]:
+            if book["book_id"] not in duplicate_book_IDs:
+                duplicate_book_IDs = []
+                current_book_title = book["book_title"]
+                current_series_name = book["series_name"]
+                current_series_part = book["series_part"]
+                current_grade = book["grade"]
+                current_age_group = book["age_group"]
+                current_author = book["author"]
+                current_publisher = book["publisher"]
+                # A loop that compares the details of the current book with the details of the other books
+                for book in all_books["books"]:
                     if (
-                        common_book_title == book["book_title"]
-                        and common_series_name == book["series_name"]
-                        and common_series_part == book["series_part"]
-                        and common_grade == book["grade"]
-                        and common_age_group == book["age_group"]
-                        and common_author == book["author"]
-                        and common_publisher == book["publisher"]
+                            current_book_title == book["book_title"]
+                            and current_series_name == book["series_name"]
+                            and current_series_part == book["series_part"]
+                            and current_grade == book["grade"]
+                            and current_age_group == book["age_group"]
+                            and current_author == book["author"]
+                            and current_publisher == book["publisher"]
                     ):
-                        if book["book_id"] not in books_group:
-                            books_group.append(book["book_id"])
-                            count += 1
+                        # A condition that inserts the found double book into an array
+                        if book["book_id"] not in duplicate_book_IDs:
+                            duplicate_book_IDs.append(book["book_id"])
                     else:
+                        # If this book is not found to match the current book, go to compare the next book with the current book
                         continue
-                books_data1 = read_archive_json()
-                # לולאה עבור כל ספר ברשימת הספרים
-                for book in books_data1["books"]:
-                    if book["book_id"] in books_group:
-                        book["amount_in_archive"] = str(count)
-                # לאחר שעשינו את השינויים בספרים, נשמור את הקובץ מחדש
-                with open("dependence/ArcFiles/archive.json", "w", encoding="utf-8") as json_file:
-                    json.dump(books_data1, json_file, ensure_ascii=False, indent=4)
-                count = 0
 
+                # A loop that will go through the matching books and set their amount_in_archive value according to their amount
+                for book in all_books["books"]:
+                    if book["book_id"] in duplicate_book_IDs:
+                        book["amount_in_archive"] = str(len(duplicate_book_IDs))
+                # After we have made the changes in the books, we will save the file again
+                write_update_to_the_archive_json(all_books)
 
-    def clearLayout(self, layout):
-        while layout.count():
-            item = layout.takeAt(0)
-            widget = item.widget()
-            if widget:
-                widget.deleteLater()
-            else:
-                self.clearLayout(item.layout())
+    # A function to break down the book into details and then send the details to the settings window
+    def edit_book_data(self, this_book_id):
+        archive_file_content = read_archive_json()
+        for book in archive_file_content["books"]:
+            if book["book_id"] == this_book_id:
+                book_data = {}
+                # Adding the book details to the dictionary
+                book_data["book_id"] = book["book_id"]
+                book_data["book_title"] = book["book_title"]
+                book_data["series_name"] = book["series_name"]
+                book_data["series_part"] = book["series_part"]
+                book_data["grade"] = book["grade"]
+                book_data["age_group"] = book["age_group"]
+                book_data["author"] = book["author"]
+                book_data["publisher"] = book["publisher"]
+                book_data["shelf"] = book["shelf"]
+                book_data["amount_in_archive"] = book["amount_in_archive"]
+                book_data["is_borrowed"] = book["is_borrowed"]
+                book_data["book_condition"] = book["book_condition"]
+                book_data["loaning_date"] = book["loaning_date"]
+                book_data["book_type"] = book["book_type"]
+                book_data["borrower_name"] = book["borrower_name"]
+                book_data["borrower_id"] = book["borrower_id"]
+                book_data["remarks"] = book["remarks"]
 
-    # בפונקציה edit_book_data במקום הקריאה לפונקציה print_book_id תקרא לפונקציה שמייצרת את החלון החדש
-    def edit_book_data(self, book_id):
-        # חפש את הספר לפי ה book_id
-        selected_book = None
-        for book in self.data.get("books", []):
-            if book["book_id"] == book_id:
-                selected_book = book
-                break
-        if selected_book:
-            book_data = [
-                selected_book["book_id"],
-                selected_book["book_title"],
-                selected_book["series_name"],
-                selected_book["series_part"],
-                selected_book["grade"],
-                selected_book["age_group"],
-                selected_book["author"],
-                selected_book["publisher"],
-                selected_book["shelf"],
-                selected_book["amount_in_archive"],
-                selected_book["is_borrowed"],
-                selected_book["book_condition"],
-                selected_book["loaning_date"],
-                selected_book["book_type"],
-                selected_book["borrower_name"],
-                selected_book["borrower_id"],
-                selected_book["remarks"]
-            ]
-
-            self.open_settings_dialog(book_data)
-
-    # פונקציה שתפתח את הדיאלוג עם העריכה
-    def open_settings_dialog(self, book_data):
-        dialog1 = SettingsDialog(book_data)
-        dialog1.exec_()
+        self.open_book_settings_dialog(book_data)
         self.load_archive()
 
+    # A function to open the dialog for editing the book details
+    def open_book_settings_dialog(self, book_data):
+        book_settings = book_settings_dialog(book_data)
+        book_settings.exec_()
 
-    def creating_a_frame_with_a_scroll_bar(self):
-        # Creating a frame for the song details with a scroll bar
-        self.scrollArea = QtWidgets.QScrollArea(self)
-        self.scrollArea.setWidgetResizable(True)
-        self.scrollArea.setObjectName("scrollArea")
-
-
-        self.scrollAreaWidgetContents_3 = QtWidgets.QWidget()
-        self.scrollAreaWidgetContents_3.setGeometry(QtCore.QRect(0, 0, 1539, 507))
-        self.scrollAreaWidgetContents_3.setObjectName("scrollAreaWidgetContents_3")
-
-        self.gridLayout_2 = QtWidgets.QGridLayout(self.scrollAreaWidgetContents_3)
-        self.gridLayout_2.setObjectName("gridLayout_2")
-
-        self.splitter = QtWidgets.QSplitter(self.scrollAreaWidgetContents_3)
-        self.splitter.setOrientation(QtCore.Qt.Horizontal)
-        self.splitter.setObjectName("splitter")
-
-        self.splitter_2 = QtWidgets.QSplitter(self.splitter)
-        self.splitter_2.setOrientation(QtCore.Qt.Horizontal)
-        self.splitter_2.setOpaqueResize(True)
-        self.splitter_2.setChildrenCollapsible(False)
-        self.splitter_2.setObjectName("splitter_2")
-
-        self.groupBox_remarks = QtWidgets.QGroupBox(self.splitter_2)
-        self.groupBox_remarks.setAlignment(QtCore.Qt.AlignCenter)
-        self.groupBox_remarks.setFlat(True)
-        self.groupBox_remarks.setObjectName("groupBox_remarks")
-        self.groupBox_remarks.setTitle("הערות")
-        self.group_boxes.append(self.groupBox_remarks)
-
-        self.gridLayout_13 = QtWidgets.QGridLayout(self.groupBox_remarks)
-        self.gridLayout_13.setContentsMargins(0, -1, 0, -1)
-        self.gridLayout_13.setObjectName("gridLayout_13")
-        self.group_boxes_to_clear.append(self.gridLayout_13)
-
-        self.groupBox_borrower_id = QtWidgets.QGroupBox(self.splitter_2)
-        self.groupBox_borrower_id.setAlignment(QtCore.Qt.AlignCenter)
-        self.groupBox_borrower_id.setFlat(True)
-        self.groupBox_borrower_id.setObjectName("groupBox_borrower_id")
-        self.groupBox_borrower_id.setTitle("תעודת זהות")
-        self.group_boxes.append(self.groupBox_borrower_id)
-
-        self.gridLayout_12 = QtWidgets.QGridLayout(self.groupBox_borrower_id)
-        self.gridLayout_12.setContentsMargins(0, -1, 0, -1)
-        self.gridLayout_12.setObjectName("gridLayout_12")
-        self.group_boxes_to_clear.append(self.gridLayout_12)
-
-        self.groupBox_borrower_name = QtWidgets.QGroupBox(self.splitter_2)
-        self.groupBox_borrower_name.setAlignment(QtCore.Qt.AlignCenter)
-        self.groupBox_borrower_name.setFlat(True)
-        self.groupBox_borrower_name.setObjectName("groupBox_borrower_name")
-        self.groupBox_borrower_name.setTitle("שם השואל/הלוקח")
-        self.group_boxes.append(self.groupBox_borrower_name)
-
-        self.gridLayout_11 = QtWidgets.QGridLayout(self.groupBox_borrower_name)
-        self.gridLayout_11.setContentsMargins(0, -1, 0, -1)
-        self.gridLayout_11.setObjectName("gridLayout_11")
-        self.group_boxes_to_clear.append(self.gridLayout_11)
-
-        self.groupBox_book_type = QtWidgets.QGroupBox(self.splitter_2)
-        self.groupBox_book_type.setAlignment(QtCore.Qt.AlignCenter)
-        self.groupBox_book_type.setFlat(True)
-        self.groupBox_book_type.setObjectName("groupBox_book_type")
-        self.groupBox_book_type.setTitle("סוג הספר")
-        self.group_boxes.append(self.groupBox_book_type)
-
-        self.gridLayout_10 = QtWidgets.QGridLayout(self.groupBox_book_type)
-        self.gridLayout_10.setContentsMargins(0, -1, 0, -1)
-        self.gridLayout_10.setObjectName("gridLayout_10")
-        self.group_boxes_to_clear.append(self.gridLayout_10)
-
-        self.groupBox_loaning_date = QtWidgets.QGroupBox(self.splitter_2)
-        self.groupBox_loaning_date.setEnabled(True)
-        self.groupBox_loaning_date.setAlignment(QtCore.Qt.AlignCenter)
-        self.groupBox_loaning_date.setFlat(True)
-        self.groupBox_loaning_date.setObjectName("groupBox_loaning_date")
-        self.groupBox_loaning_date.setTitle("תאריך השאלה")
-        self.group_boxes.append(self.groupBox_loaning_date)
-
-        self.gridLayout_9 = QtWidgets.QGridLayout(self.groupBox_loaning_date)
-        self.gridLayout_9.setContentsMargins(0, -1, 0, -1)
-        self.gridLayout_9.setObjectName("gridLayout_9")
-        self.group_boxes_to_clear.append(self.gridLayout_9)
-
-        self.groupBox_6 = QtWidgets.QGroupBox(self.splitter_2)
-        self.groupBox_6.setAlignment(QtCore.Qt.AlignCenter)
-        self.groupBox_6.setFlat(True)
-        self.groupBox_6.setObjectName("groupBox_6")
-        self.groupBox_6.setTitle("מצב הספר")
-        self.group_boxes.append(self.groupBox_6)
-
-        self.gridLayout_8 = QtWidgets.QGridLayout(self.groupBox_6)
-        self.gridLayout_8.setContentsMargins(0, -1, 0, -1)
-        self.gridLayout_8.setObjectName("gridLayout_8")
-        self.group_boxes_to_clear.append(self.gridLayout_8)
-
-        self.groupBox_is_borrowed = QtWidgets.QGroupBox(self.splitter_2)
-        self.groupBox_is_borrowed.setLayoutDirection(QtCore.Qt.RightToLeft)
-        self.groupBox_is_borrowed.setAlignment(QtCore.Qt.AlignCenter)
-        self.groupBox_is_borrowed.setFlat(True)
-        self.groupBox_is_borrowed.setObjectName("groupBox_is_borrowed")
-        self.groupBox_is_borrowed.setTitle("מושאל")
-        self.group_boxes.append(self.groupBox_is_borrowed)
-
-        self.gridLayout_7 = QtWidgets.QGridLayout(self.groupBox_is_borrowed)
-        self.gridLayout_7.setContentsMargins(0, -1, 0, -1)
-        self.gridLayout_7.setObjectName("gridLayout_7")
-        self.group_boxes_to_clear.append(self.gridLayout_7)
-
-        self.groupBox_amount_in_archive = QtWidgets.QGroupBox(self.splitter_2)
-        self.groupBox_amount_in_archive.setAlignment(QtCore.Qt.AlignCenter)
-        self.groupBox_amount_in_archive.setFlat(True)
-        self.groupBox_amount_in_archive.setObjectName("groupBox_amount_in_archive")
-        self.groupBox_amount_in_archive.setTitle("כמות בארכיון")
-        self.group_boxes.append(self.groupBox_amount_in_archive)
-
-        self.gridLayout_6 = QtWidgets.QGridLayout(self.groupBox_amount_in_archive)
-        self.gridLayout_6.setContentsMargins(0, -1, 0, -1)
-        self.gridLayout_6.setObjectName("gridLayout_6")
-        self.group_boxes_to_clear.append(self.gridLayout_6)
-
-        self.groupBox_shelf = QtWidgets.QGroupBox(self.splitter_2)
-        self.groupBox_shelf.setAlignment(QtCore.Qt.AlignCenter)
-        self.groupBox_shelf.setFlat(True)
-        self.groupBox_shelf.setObjectName("groupBox_shelf")
-        self.groupBox_shelf.setTitle("מדף")
-        self.group_boxes.append(self.groupBox_shelf)
-
-        self.gridLayout_5 = QtWidgets.QGridLayout(self.groupBox_shelf)
-        self.gridLayout_5.setContentsMargins(0, -1, 0, -1)
-        self.gridLayout_5.setObjectName("gridLayout_5")
-        self.group_boxes_to_clear.append(self.gridLayout_5)
-
-        self.groupBox_publisher = QtWidgets.QGroupBox(self.splitter_2)
-        self.groupBox_publisher.setAlignment(QtCore.Qt.AlignCenter)
-        self.groupBox_publisher.setFlat(True)
-        self.groupBox_publisher.setObjectName("groupBox_publisher")
-        self.groupBox_publisher.setTitle("מוציא לאור")
-        self.group_boxes.append(self.groupBox_publisher)
-
-        self.gridLayout_15 = QtWidgets.QGridLayout(self.groupBox_publisher)
-        self.gridLayout_15.setContentsMargins(0, -1, 0, -1)
-        self.gridLayout_15.setObjectName("gridLayout_15")
-        self.group_boxes_to_clear.append(self.gridLayout_15)
-
-        self.groupBox_author = QtWidgets.QGroupBox(self.splitter_2)
-        self.groupBox_author.setAlignment(QtCore.Qt.AlignCenter)
-        self.groupBox_author.setFlat(True)
-        self.groupBox_author.setObjectName("groupBox_author")
-        self.groupBox_author.setTitle("מחבר")
-        self.group_boxes.append(self.groupBox_author)
-
-        self.gridLayout_14 = QtWidgets.QGridLayout(self.groupBox_author)
-        self.gridLayout_14.setContentsMargins(0, -1, 0, -1)
-        self.gridLayout_14.setObjectName("gridLayout_14")
-        self.group_boxes_to_clear.append(self.gridLayout_14)
-
-        self.groupBox_age_group = QtWidgets.QGroupBox(self.splitter_2)
-        self.groupBox_age_group.setAlignment(QtCore.Qt.AlignCenter)
-        self.groupBox_age_group.setFlat(True)
-        self.groupBox_age_group.setObjectName("groupBox_age_group")
-        self.groupBox_age_group.setTitle("שכבת גיל")
-        self.group_boxes.append(self.groupBox_age_group)
-
-        self.gridLayout_17 = QtWidgets.QGridLayout(self.groupBox_age_group)
-        self.gridLayout_17.setContentsMargins(0, -1, 0, -1)
-        self.gridLayout_17.setObjectName("gridLayout_17")
-        self.group_boxes_to_clear.append(self.gridLayout_17)
-
-        self.groupBox_grade = QtWidgets.QGroupBox(self.splitter_2)
-        self.groupBox_grade.setAlignment(QtCore.Qt.AlignCenter)
-        self.groupBox_grade.setFlat(True)
-        self.groupBox_grade.setObjectName("groupBox_grade")
-        self.groupBox_grade.setTitle("כיתה")
-        self.group_boxes.append(self.groupBox_grade)
-
-        self.gridLayout_16 = QtWidgets.QGridLayout(self.groupBox_grade)
-        self.gridLayout_16.setContentsMargins(0, -1, 0, -1)
-        self.gridLayout_16.setObjectName("gridLayout_16")
-        self.group_boxes_to_clear.append(self.gridLayout_16)
-
-        self.groupBox_series_part = QtWidgets.QGroupBox(self.splitter_2)
-        self.groupBox_series_part.setAlignment(QtCore.Qt.AlignCenter)
-        self.groupBox_series_part.setFlat(True)
-        self.groupBox_series_part.setObjectName("groupBox_series_part")
-        self.groupBox_series_part.setTitle("חלק בסדרה")
-        self.group_boxes.append(self.groupBox_series_part)
-
-        self.gridLayout_18 = QtWidgets.QGridLayout(self.groupBox_series_part)
-        self.gridLayout_18.setContentsMargins(0, -1, 0, -1)
-        self.gridLayout_18.setObjectName("gridLayout_18")
-        self.group_boxes_to_clear.append(self.gridLayout_18)
-
-        self.groupBox_series_name = QtWidgets.QGroupBox(self.splitter_2)
-        self.groupBox_series_name.setAlignment(QtCore.Qt.AlignCenter)
-        self.groupBox_series_name.setFlat(True)
-        self.groupBox_series_name.setObjectName("groupBox_series_name")
-        self.groupBox_series_name.setTitle("שם הסדרה")
-        self.group_boxes.append(self.groupBox_series_name)
-
-        self.gridLayout_19 = QtWidgets.QGridLayout(self.groupBox_series_name)
-        self.gridLayout_19.setContentsMargins(0, -1, 0, -1)
-        self.gridLayout_19.setObjectName("gridLayout_19")
-        self.group_boxes_to_clear.append(self.gridLayout_19)
-
-        self.groupBox_book_title = QtWidgets.QGroupBox(self.splitter_2)
-        self.groupBox_book_title.setAlignment(QtCore.Qt.AlignCenter)
-        self.groupBox_book_title.setFlat(True)
-        self.groupBox_book_title.setObjectName("groupBox_book_title")
-        self.groupBox_book_title.setTitle("שם הספר")
-        self.group_boxes.append(self.groupBox_book_title)
-
-        self.gridLayout_20 = QtWidgets.QGridLayout(self.groupBox_book_title)
-        self.gridLayout_20.setContentsMargins(0, -1, 0, -1)
-        self.gridLayout_20.setObjectName("gridLayout_20")
-        self.group_boxes_to_clear.append(self.gridLayout_20)
-
-        self.groupBox_book_id = QtWidgets.QGroupBox(self.splitter_2)
-        self.groupBox_book_id.setAlignment(QtCore.Qt.AlignCenter)
-        self.groupBox_book_id.setFlat(True)
-        self.groupBox_book_id.setObjectName("groupBox_book_id")
-        self.groupBox_book_id.setTitle("מזהה")
-        self.group_boxes.append(self.groupBox_book_id)
-
-        self.gridLayout_21 = QtWidgets.QGridLayout(self.groupBox_book_id)
-        self.gridLayout_21.setContentsMargins(0, -1, 0, -1)
-        self.gridLayout_21.setObjectName("gridLayout_21")
-        self.group_boxes_to_clear.append(self.gridLayout_21)
-
-        self.groupBox_tools = QtWidgets.QGroupBox(self.splitter_2)
-        self.groupBox_tools.setAlignment(QtCore.Qt.AlignCenter)
-        self.groupBox_tools.setFlat(True)
-        self.groupBox_tools.setObjectName("groupBox_tools")
-        self.groupBox_tools.setTitle("כלים")
-        self.group_boxes.append(self.groupBox_tools)
-
-        self.gridLayout_22 = QtWidgets.QGridLayout(self.groupBox_tools)
-        self.gridLayout_22.setContentsMargins(0, -1, 0, -1)
-        self.gridLayout_22.setObjectName("gridLayout_22")
-        self.group_boxes_to_clear.append(self.gridLayout_22)
-
-        self.gridLayout_2.addWidget(self.splitter, 0, 0, 1, 1)
-        self.scrollArea.setWidget(self.scrollAreaWidgetContents_3)
-
-
-        self.layout.addWidget(self.scrollArea)
-        #scroll_content = QWidget(self.scrollArea)
-        #self.scrollArea.setWidget(scroll_content)
-        #scroll_layout = QVBoxLayout(scroll_content)
-        self.scrollArea.setWidgetResizable(True)
-
-
-        self.input_fields_layout = QVBoxLayout()
-        #scroll_layout.addLayout(self.input_fields_layout)
-
-    def Add_a_label_to_the_frame(self):
-        # יצירת והוספת ה- QLabel ל- input_fields_layout
-        self.center_label = QLabel("", self)
-        self.center_label.setAlignment(QtCore.Qt.AlignCenter)  # מיון הטקסט למרכז
-        # הגדרת גופן גדול יותר לטקסט
-        font = QFont()
-        font.setPointSize(20)  # גודל הגופן בנקודות
-        self.center_label.setFont(font)
-        self.input_fields_layout.addWidget(self.center_label)
-
-# So far the initial interface has been designed
-# From here on, mainly the functions of the software operations
-
-    def manage_json_files(self):
-        pass
-
-    def open_file(self):
-        pass
-
-    def dragLeaveEvent(self, event):
-        pass
-
-    def dragEnterEvent(self, event):
-        pass
-
-    def dropEvent(self, event):
-        pass
-
-# So far the songs are placed in the window and the software alerts you to anything that is needed
-# From here on, the buttons actions
+    # So far the songs are placed in the window and the software alerts you to anything that is needed
+    # From here on, the buttons actions
 
     def add_books_action_triggered(self):
-        dialog1 = AddBooksWindow()
-        dialog1.exec_()
+        Add_new_books = Add_new_books_dialog()
+        Add_new_books.exec_()
         self.load_archive()
 
     def clear_action_triggered(self):
@@ -890,287 +711,390 @@ class MainWindow(QMainWindow):
     def restore_names_triggered(self):
         pass
 
-class EditBookDialog(QDialog):
+class book_settings_dialog(QDialog):
     def __init__(self, book_data):
         super().__init__()
-        self.this_original_book_id = book_data[0]
-        self.setWindowTitle(f"עריכת ספר  {self.this_original_book_id}")
-        self.setGeometry(700, 300, 400, 300)
 
-        layout = QVBoxLayout()
+        self.Creating_a_book_settings_dialog_GUI(book_data)
 
-        # רשימה לשמירת ה-QLineEdit וה-QComboBox
-        self.input_widgets = []
+    def Creating_a_book_settings_dialog_GUI(self, book_data):
+        self.this_original_book_id = book_data["book_id"]
+        self.setWindowTitle(f"הגדרות ספר {self.this_original_book_id}")
+        self.setFixedSize(827, 208)
 
-        # רשימה של שמות התוויות בסדר שאתה רוצה
-        labels_names = [
-            "מזהה ספר (לא מומלץ לשנות):",
-            "כותרת הספר:",
-            "שם הסדרה:",
-            "חלק בסדרה:",
-            "כיתה:",
-            "קבוצת גיל:",
-            "מְחַבֵּר:",
-            "מוֹצִיא לָאוֹר:",
-            "מַדָף:",
-            "כמות בארכיון:",
-            "סכום שאול:",
-            "מצב הספר:",
-            "תאריך ההשאלה:",
-            "סוג הספר:",
-            "שם השואל/הלוקח:",
-            "תעודת זהות:",
-            "הערות:"
+        # Create main frame for all components
+        self.book_settings_dialog_main_frame = QFrame(self)
+        self.book_settings_dialog_main_frame.setFrameShape(QFrame.StyledPanel)
+        #self.book_settings_dialog_main_frame.setFrameShape(QFrame.Panel)
+        #self.book_settings_dialog_main_frame.setFrameShape(QFrame.Box)
+        self.book_settings_dialog_main_frame.setFrameShadow(QFrame.Raised)
+
+        # Organize the components inside the book_settings_dialog_main_frame in grid order
+        self.gridLayout = QGridLayout(self)
+        self.gridLayout.setObjectName("gridLayout")
+        self.gridLayout.addWidget(self.book_settings_dialog_main_frame, 0, 0, 1, 1)
+
+        # Create delete book button
+        self.delete_book_button = QPushButton(self.book_settings_dialog_main_frame)
+        self.delete_book_button.setGeometry(QtCore.QRect(20, 20, 150, 150))
+        self.delete_book_button.clicked.connect(lambda: self.delete_this_book(book_data))
+        self.delete_book_button_pixmap = QPixmap('dependence/images/delete_book.png')
+        self.delete_book_button.setIconSize(self.delete_book_button.size())
+        self.delete_book_button.setIcon(QIcon(self.delete_book_button_pixmap))
+
+        # Create duplicate book button
+        self.duplicate_book_button = QPushButton(self.book_settings_dialog_main_frame)
+        self.duplicate_book_button.setGeometry(QtCore.QRect(225, 20, 150, 150))
+        self.duplicate_book_button.clicked.connect(lambda: self.open_duplicate_book(book_data))
+        self.duplicate_book_button_pixmap = QPixmap('dependence/images/add_book.png')
+        self.duplicate_book_button.setIconSize(self.duplicate_book_button.size())
+        self.duplicate_book_button.setIcon(QIcon(self.duplicate_book_button_pixmap))
+
+        # Create Borrow book button
+        self.Borrow_book_button = QPushButton(self.book_settings_dialog_main_frame)
+        self.Borrow_book_button.setGeometry(QtCore.QRect(430, 20, 150, 150))
+        self.Borrow_book_button.clicked.connect(lambda: self.lend_or_return_book(book_data))
+        self.Borrow_book_button_pixmap = QPixmap('dependence/images/nook_return.png')
+        self.Borrow_book_button.setIconSize(self.Borrow_book_button.size())
+        self.Borrow_book_button.setIcon(QIcon(self.Borrow_book_button_pixmap))
+        if book_data["is_borrowed"] == "לא":
+            self.Borrow_book_button_pixmap = QPixmap('dependence/images/book_lend.png')
+            self.Borrow_book_button.setIcon(QIcon(self.Borrow_book_button_pixmap))
+
+        # Create edit book details button
+        self.edit_book_details_button = QPushButton(self.book_settings_dialog_main_frame)
+        self.edit_book_details_button.setGeometry(QtCore.QRect(635, 20, 150, 150))
+        self.edit_book_details_button.clicked.connect(lambda: self.open_editing_book_details_dialog(book_data))
+        self.edit_book_details_button_pixmap = QPixmap('dependence/images/edit_book.png')
+        self.edit_book_details_button.setIconSize(self.edit_book_details_button.size())
+        self.edit_book_details_button.setIcon(QIcon(self.edit_book_details_button_pixmap))
+
+        SettingsButtons = [
+            self.delete_book_button,
+            self.duplicate_book_button,
+            self.Borrow_book_button,
+            self.edit_book_details_button
         ]
 
-        # הלולאה הולכת על כל רכיב ברשימה
-        for key, value in enumerate(book_data):
-            # יצירת QLabel עם השם המתאים מהרשימה
-            if key == 0:
-                label = QLabel(labels_names[key])
-                label.setStyleSheet("color: red;")
+        for button in SettingsButtons:
+            button.setStyleSheet(
+                "QPushButton {"
+                "   border-radius: 20px;"  # Rounding the button frame
+                "   border: 2px solid #d0d0d0;"  # frame color
+                "}"
+                "QPushButton:hover {"
+                "   border: 2px solid #808080;"  # The frame color when the mouse hovers over the button
+                "}"
+                "QPushButton:hover:pressed {"
+                "   border: 2px solid #4a4a4a;"  # The frame color when the mouse clicks the button
+                "}"
+            )
 
-            else:
-                label = QLabel(labels_names[key])
+    def open_editing_book_details_dialog(self, book_data):
+        self.close()
+        editing_book_details = editing_book_details_dialog(book_data)
+        editing_book_details.exec_()
 
-            # אם השדה הוא "book_type" או "book_condition", יוצר QComboBox ויתחבר לפעולה הנדרשת
-            if key not in [13, 11, 0]:
-                # אם המפתח הוא לא "book_type" או "book_condition", ייצור QLineEdit והוספתו ל־layout
-                edit_line = QLineEdit(value)
-                # יצירת QHBoxLayout והוספת התווית וה־LineEdit אליו
-                row_layout = QHBoxLayout()
-                row_layout.addWidget(edit_line)
-                row_layout.addWidget(label)
-                # הוספת ה־HBoxLayout ל־layout הראשי
-                layout.addLayout(row_layout)
-                self.input_widgets.append(edit_line)
-            elif key == 0:
-                edit_line = QLineEdit(value)
-                edit_line.setReadOnly(False)
-                # יצירת QHBoxLayout והוספת התווית וה־LineEdit אליו
-                row_layout = QHBoxLayout()
-                row_layout.addWidget(edit_line)
-                row_layout.addWidget(label)
-                # הוספת ה־HBoxLayout ל־layout הראשי
-                layout.addLayout(row_layout)
-                self.input_widgets.append(edit_line)
-            elif key == 11:
-                # יצירת QComboBox והוספתו ל־layout
-                combo_box = QComboBox()
-                combo_box.addItem(value)
-                combo_box.addItem("בחר מצב ספר")
-                combo_box.addItem("חדש")
-                combo_box.addItem("משומש")
-                combo_box.addItem("פתור/כתוב")
-                combo_box.addItem("קרוע")
-                combo_box.addItem("לא ידוע")
-                # יצירת QHBoxLayout והוספת התווית וה־ComboBox אליו
-                row_layout = QHBoxLayout()
-                row_layout.addWidget(combo_box)
-                row_layout.addWidget(label)
-                # הוספת ה־HBoxLayout ל־layout הראשי
-                layout.addLayout(row_layout)
-                self.input_widgets.append(combo_box)
-            elif key == 13:
-                # יצירת QComboBox והוספתו ל־layout
-                combo_box = QComboBox()
-                combo_box.addItem(value)
-                combo_box.addItem("בחר סוג ספר")
-                combo_box.addItem("קודש")
-                combo_box.addItem("כתיבה")
-                combo_box.addItem("קריאה")
-                combo_box.addItem("לימוד")
-                # יצירת QHBoxLayout והוספת התווית וה־ComboBox אליו
-                row_layout = QHBoxLayout()
-                row_layout.addWidget(combo_box)
-                row_layout.addWidget(label)
-                # הוספת ה־HBoxLayout ל־layout הראשי
-                layout.addLayout(row_layout)
-                self.input_widgets.append(combo_box)
+    def lend_or_return_book(self, book_data):
+        self.close()
 
-        # אחרי שיצרנו את כל ה-QLineEdit וה-QComboBox, נוסיף את הרשימה שלהם לערכה של self.edited_data
+        data = read_archive_json()
+        # Loop over all books
+        for book in data['books']:
+            # If the book is the current book
+            if book['book_id'] == book_data["book_id"]:
+                # If the value is_borrowed is negative
+                if book['is_borrowed'] == "לא":
+                    Borrower_details = self.open_Borrower_details_dialog(book_data["remarks"])
+                    if Borrower_details.Book_loan_approval:
+                        book['is_borrowed'] = "כן"
+                        # add role the value borrower_name
+                        Borrower_details.role = " (" + Borrower_details.role + ")"
+                        if Borrower_details.role == " (ללא)":
+                            Borrower_details.role = ""
+                        book['borrower_name'] = Borrower_details.first_name + " " + Borrower_details.last_name + Borrower_details.role
+                        # fill the value borrower_id
+                        book['borrower_id'] = Borrower_details.borrower_id
+                        # fill the value remarks
+                        book['remarks'] = Borrower_details.remarks
+                        # fill the value loaning_date
+                        current_date = datetime.date.today()
+                        formatted_date = current_date.strftime("%d/%m/%Y")
+                        book['loaning_date'] = str(formatted_date)
+                # If the value is_borrowed is positive
+                elif book['is_borrowed'] == "כן":
+                    Is_book_returned_yes_clicked, Is_book_returned_delete_remarks = self.open_Is_book_returned_dialog(book_data)
+                    if Is_book_returned_yes_clicked:
+                        book['is_borrowed'] = "לא"
+                        book['borrower_name'] = ""
+                        book['borrower_id'] = ""
+                        book['loaning_date'] = ""
+                        if Is_book_returned_delete_remarks:
+                            book['remarks'] = ""
 
-        self.setLayout(layout)
+            # Update the information in the JSON file
+            write_update_to_the_archive_json(data)
 
-        # ניתן להוסיף את הכפתורים שאתה רוצה כאן, לדוגמה, כפתורי "שמור" ו"בטל"
-        # יצירת כפתור "שמור"
-        save_button = QPushButton("שמור", self)
-        save_button.clicked.connect(self.save_changes)
-        layout.addWidget(save_button)
+    def open_Borrower_details_dialog(self, book_remarks):
+        Borrower_details = Borrower_details_dialog(book_remarks)
+        Borrower_details.exec_()
+        return Borrower_details
 
-        # יצירת כפתור "בטל"
-        cancel_button = QPushButton("בטל", self)
-        cancel_button.clicked.connect(self.cancel_button_clicked)
-        layout.addWidget(cancel_button)
+    def open_Is_book_returned_dialog(self, book_data):
+        yes_clicked = False
+        delete_remarks = False
+        Is_book_returned = Is_book_returned_dialog(book_data)
+        if Is_book_returned.exec_() == QDialog.Accepted:
+            yes_clicked = True
+            if Is_book_returned.delete_remarks_check_box.isChecked():
+                delete_remarks = True
+        return yes_clicked, delete_remarks
 
+    def delete_this_book(self, book_data):
+        self.close()
+        this_book_id = [book_data["book_id"]]
+        # Use this function to delete a book by its id
+        delete_book_by_id(this_book_id)
 
-    # פונקציה שתוסיף את הערך החדש ל־self.input_widgets
-    def add_current_text_to_(self):
-        new_value = self.book_type_combo_box.currentText()
-        # בדוק האם הערך כבר קיים ב־self.input_widgets
-        if new_value not in [widget.text() for widget in self.input_widgets]:
-            self.input_widgets.append(new_value)
+    def open_duplicate_book(self, book_data):
+        self.close()
+        Duplicate_book = Duplicate_book_Dialog(book_data)
+        Duplicate_book.exec_()
 
-    def cancel_button_clicked(self):
-        print("ssssss")
-
-    def save_changes(self):
-        # אני מניח שבניית המידע על הספר תתבצע בדיוק באותה הסדר כמו שהוצגה בעמודה הימנית
-        # הקבלת מערך עם ה-LineEdits המעודכנים
-
-        self.edited_data = [widget.text() if isinstance(widget, QLineEdit) else widget.currentText() for widget in self.input_widgets]
-        #(self.edited_data)
-
-        # בניית מילון עם שמות השדות כמפתחות וערכי השדות מה-LineEdits כערכים
-        book_data = {
-            "remarks": self.edited_data[16],
-            "borrower_id": self.edited_data[15],
-            "borrower_name": self.edited_data[14],
-            "book_type": self.edited_data[13],
-            "loaning_date": self.edited_data[12],
-            "book_condition": self.edited_data[11],
-            "is_borrowed": self.edited_data[10],
-            "amount_in_archive": self.edited_data[9],
-            "shelf": self.edited_data[8],
-            "publisher": self.edited_data[7],
-            "author": self.edited_data[6],
-            "age_group": self.edited_data[5],
-            "grade": self.edited_data[4],
-            "series_part": self.edited_data[3],
-            "series_name": self.edited_data[2],
-            "book_title": self.edited_data[1],
-            "book_id": self.edited_data[0]
-        }
-
-        # כאן תוכל להוסיף קוד שמעדכן את המידע בקובץ JSON
-        # נניח שיש לך מערך של הספרים ב- self.data ואתה רוצה לעדכן את המידע במערך זה על פי book_id
-        # אפשר לעשות משהו כמו זה:
-
-
-        self.data = read_archive_json()
-        for i, book in enumerate(self.data["books"]):
-            if book["book_id"] == self.this_original_book_id:
-
-                if self.edited_data[0] != self.this_original_book_id:
-                    data1 = read_archive_json()
-                    # עבור על כל הספרים ברשימה
-                    for book in data1["books"]:
-                        if book["book_id"] == self.edited_data[0]:
-                            book_data["book_id"] = self.this_original_book_id
-                            # הודעת השגיאה
-                            error_message = f"המזהה החדש שבחרת הינו כבר בשימוש ע\"י ספר אחר,\nשינוי המזהה {self.this_original_book_id} לא עבר בהצלחה"
-                            # חלון הודעת שגיאה
-                            error_box = QtWidgets.QMessageBox()
-                            error_box.setIcon(QtWidgets.QMessageBox.Critical)
-                            error_box.setWindowTitle("שגיאה")
-                            error_box.setText(error_message)
-
-                            # הצגת ההודעה למשתמש
-                            error_box.exec_()
-
-                self.data["books"][i] = book_data
-                break
-
-
-        # כאן תוכל לשמור את המידע המעודכן לקובץ JSON שוב
-        archive_path = os.path.join("dependence", "ArcFiles", "archive.json")
-        with open(archive_path, "w", encoding="utf-8") as file:
-            json.dump(self.data, file, ensure_ascii=False, indent=4)
-
-        # כאן תוכל לסגור את הדיאלוג
-        self.accept()
-
-
-class AddBooksWindow(QDialog):
-    def __init__(self):
+class Duplicate_book_Dialog(QDialog):
+    def __init__(self, book_data):
         super().__init__()
 
-        self.initUI()
+        self.setWindowTitle("שכפול הספר")
+        self.setFixedSize(311, 457)
 
-    def initUI(self):
-        # יצירת כל הווידג'טים
+        self.initUI(book_data)
 
-        self.title_label = QLabel("שם הספר:")
-        self.title_lineedit = QLineEdit()
+    def initUI(self, book_data):
+        sizePolicy = QSizePolicy(QSizePolicy.Preferred, QSizePolicy.Preferred)
+        sizePolicy.setHorizontalStretch(0)
+        sizePolicy.setVerticalStretch(0)
+        sizePolicy.setHeightForWidth(self.sizePolicy().hasHeightForWidth())
+        self.setSizePolicy(sizePolicy)
 
-        self.series_label = QLabel("שם הסדרה:")
-        self.series_lineedit = QLineEdit()
+        self.gridLayout = QGridLayout(self)
+        self.gridLayout.setObjectName("gridLayout")
 
-        self.series_part_label = QLabel("חלק בסדרה:")
-        self.series_part_lineedit = QLineEdit()
+        self.main_widget = QWidget(self)
+        self.main_widget.setObjectName("main_widget")
+        self.verticalLayout = QVBoxLayout(self.main_widget)
 
-        self.grade_label = QLabel("כיתה:")
-        self.grade_lineedit = QLineEdit()
+        self.verticalLayout.setObjectName("verticalLayout")
 
-        self.age_group_label = QLabel("שכבת גיל:")
-        self.age_group_lineedit = QLineEdit()
+        self.details_groupBox = QGroupBox(self.main_widget)
+        self.details_groupBox.setAlignment(QtCore.Qt.AlignRight | QtCore.Qt.AlignTrailing | QtCore.Qt.AlignVCenter)
+        self.details_groupBox.setObjectName("details_groupBox")
+        self.details_groupBox.setTitle("פרטים")
 
-        self.author_label = QLabel("מחבר:")
-        self.author_lineedit = QLineEdit()
+        self.gridLayout_2 = QGridLayout(self.details_groupBox)
+        self.gridLayout_2.setObjectName("gridLayout_2")
 
-        self.publisher_label = QLabel("מוציא לאור:")
-        self.publisher_lineedit = QLineEdit()
+        self.book_title_lineedit = QLineEdit(self.details_groupBox)
+        self.book_title_lineedit.setObjectName("book_title_lineedit")
+        self.book_title_lineedit.setText(book_data["book_title"])
+        self.gridLayout_2.addWidget(self.book_title_lineedit, 0, 0, 1, 1)
 
-        self.shelf_label = QLabel("מדף:")
-        self.shelf_lineedit = QLineEdit()
+        self.book_name_label = QLabel(self.details_groupBox)
+        self.book_name_label.setText("שם הספר:")
+        self.gridLayout_2.addWidget(self.book_name_label, 0, 1, 1, 1)
 
-        self.book_status_label = QLabel("מצב הספר:")
-        self.book_status_combobox = QComboBox()
-        self.book_status_combobox.addItems(["בחר מצב ספר", "חדש", "משומש", "פתור/כתוב", "קרוע", "לא ידוע"])
+        self.series_name_lineedit = QLineEdit(self.details_groupBox)
+        self.series_name_lineedit.setObjectName("series_name_lineedit")
+        self.series_name_lineedit.setText(book_data["series_name"])
+        self.gridLayout_2.addWidget(self.series_name_lineedit, 1, 0, 1, 1)
 
-        self.book_type_label = QLabel("סוג הספר:")
-        self.book_type_combobox = QComboBox()
-        self.book_type_combobox.addItems(["בחר סוג ספר", "קודש", "כתיבה", "קריאה", "לימוד"])
+        self.series_name_label = QLabel(self.details_groupBox)
+        self.series_name_label.setText("שם הסדרה:")
+        self.gridLayout_2.addWidget(self.series_name_label, 1, 1, 1, 1)
 
-        self.remarks_label = QLabel("הערות:")
-        self.remarks_lineedit = QLineEdit()
+        self.series_part_lineedit = QLineEdit(self.details_groupBox)
+        self.series_part_lineedit.setObjectName("series_part_lineedit")
+        self.series_part_lineedit.setText(book_data["series_part"])
+        self.gridLayout_2.addWidget(self.series_part_lineedit, 2, 0, 1, 1)
 
-        self.amount_label = QLabel("כמות:")
-        self.amount_lineedit = QLineEdit()
-        # הגבלת הקלט לספרות בלבד
-        amount_validator = QIntValidator()
-        self.amount_lineedit.setValidator(amount_validator)
+        self.series_part_label = QLabel(self.details_groupBox)
+        self.series_part_label.setText("חלק בסדרה:")
+        self.gridLayout_2.addWidget(self.series_part_label, 2, 1, 1, 1)
 
-        # יצירת כפתור "שמור"
-        self.save_button = QPushButton("שמור")
-        self.save_button.clicked.connect(self.save_button_clicked)
+        self.grade_lineedit = QLineEdit(self.details_groupBox)
+        self.grade_lineedit.setObjectName("grade_lineedit")
+        self.grade_lineedit.setText(book_data["grade"])
+        self.gridLayout_2.addWidget(self.grade_lineedit, 3, 0, 1, 1)
 
-        # הפריכה של כל הווידג'טים בתוך מסגרת בעזרת QVBoxLayout
-        layout = QVBoxLayout()
-        layout.addWidget(self.title_label)
-        layout.addWidget(self.title_lineedit)
-        layout.addWidget(self.series_label)
-        layout.addWidget(self.series_lineedit)
-        layout.addWidget(self.series_part_label)
-        layout.addWidget(self.series_part_lineedit)
-        layout.addWidget(self.grade_label)
-        layout.addWidget(self.grade_lineedit)
-        layout.addWidget(self.age_group_label)
-        layout.addWidget(self.age_group_lineedit)
-        layout.addWidget(self.author_label)
-        layout.addWidget(self.author_lineedit)
-        layout.addWidget(self.publisher_label)
-        layout.addWidget(self.publisher_lineedit)
-        layout.addWidget(self.shelf_label)
-        layout.addWidget(self.shelf_lineedit)
-        layout.addWidget(self.book_status_label)
-        layout.addWidget(self.book_status_combobox)
-        layout.addWidget(self.book_type_label)
-        layout.addWidget(self.book_type_combobox)
-        layout.addWidget(self.remarks_label)
-        layout.addWidget(self.remarks_lineedit)
-        layout.addWidget(self.amount_label)
-        layout.addWidget(self.amount_lineedit)
-        layout.addWidget(self.save_button)
+        self.grade_label = QLabel(self.details_groupBox)
+        self.grade_label.setText("כיתה:")
+        self.gridLayout_2.addWidget(self.grade_label, 3, 1, 1, 1)
 
-        self.setLayout(layout)
-        self.setWindowTitle("הוספת ספרים")
-        self.setGeometry(700, 300, 400, 300)
+        self.age_group_lineedit = QLineEdit(self.details_groupBox)
+        self.age_group_lineedit.setObjectName("age_group_lineedit")
+        self.age_group_lineedit.setText(book_data["age_group"])
+        self.gridLayout_2.addWidget(self.age_group_lineedit, 4, 0, 1, 1)
 
+        self.age_group_label = QLabel(self.details_groupBox)
+        self.age_group_label.setText("שכבת גיל:")
+        self.gridLayout_2.addWidget(self.age_group_label, 4, 1, 1, 1)
+
+        self.author_lineedit = QLineEdit(self.details_groupBox)
+        self.author_lineedit.setObjectName("author_lineedit")
+        self.author_lineedit.setText(book_data["author"])
+        self.gridLayout_2.addWidget(self.author_lineedit, 5, 0, 1, 1)
+
+        self.author_label = QLabel(self.details_groupBox)
+        self.author_label.setText("מחבר:")
+        self.gridLayout_2.addWidget(self.author_label, 5, 1, 1, 1)
+
+        self.publisher_lineedit = QLineEdit(self.details_groupBox)
+        self.publisher_lineedit.setObjectName("publisher_lineedit")
+        self.publisher_lineedit.setText(book_data["publisher"])
+        self.gridLayout_2.addWidget(self.publisher_lineedit, 6, 0, 1, 1)
+
+        self.publisher_label = QLabel(self.details_groupBox)
+        self.publisher_label.setText("מוציא לאור:")
+        self.gridLayout_2.addWidget(self.publisher_label, 6, 1, 1, 1)
+
+        self.shelf_lineedit = QLineEdit(self.details_groupBox)
+        self.shelf_lineedit.setObjectName("shelf_lineedit")
+        self.shelf_lineedit.setText(book_data["shelf"])
+        self.gridLayout_2.addWidget(self.shelf_lineedit, 7, 0, 1, 1)
+
+        self.shelf_label = QLabel(self.details_groupBox)
+        self.shelf_label.setText("מדף:")
+        self.gridLayout_2.addWidget(self.shelf_label, 7, 1, 1, 1)
+
+        self.book_condition_combobox = QComboBox(self.details_groupBox)
+        sizePolicy = QSizePolicy(QSizePolicy.Preferred, QSizePolicy.Fixed)
+        sizePolicy.setHorizontalStretch(0)
+        sizePolicy.setVerticalStretch(0)
+        sizePolicy.setHeightForWidth(self.book_condition_combobox.sizePolicy().hasHeightForWidth())
+        self.book_condition_combobox.setSizePolicy(sizePolicy)
+        self.book_condition_combobox.setObjectName("book_condition_combobox")
+        self.book_condition_combobox.addItem(book_data["book_condition"])
+        self.book_condition_combobox.addItem("חדש")
+        self.book_condition_combobox.addItem("משומש")
+        self.book_condition_combobox.addItem("פתור/כתוב")
+        self.book_condition_combobox.addItem("קרוע")
+        self.book_condition_combobox.addItem("לא ידוע")
+        self.gridLayout_2.addWidget(self.book_condition_combobox, 8, 0, 1, 1)
+
+        self.book_condition_label = QLabel(self.details_groupBox)
+        self.book_condition_label.setText("מצב הספר:")
+        self.gridLayout_2.addWidget(self.book_condition_label, 8, 1, 1, 1)
+
+        self.book_type_combobox = QComboBox(self.details_groupBox)
+        self.book_type_combobox.setObjectName("book_type_combobox")
+        self.book_type_combobox.addItem(book_data["book_type"])
+        self.book_type_combobox.addItem("קודש")
+        self.book_type_combobox.addItem("כתיבה")
+        self.book_type_combobox.addItem("קריאה")
+        self.book_type_combobox.addItem("לימוד")
+        self.book_type_combobox.addItem("אחר")
+        self.gridLayout_2.addWidget(self.book_type_combobox, 9, 0, 1, 1)
+
+        self.book_type_label = QLabel(self.details_groupBox)
+        self.book_type_label.setText("סוג הספר:")
+        self.gridLayout_2.addWidget(self.book_type_label, 9, 1, 1, 1)
+
+        self.remarks_lineedit = QLineEdit(self.details_groupBox)
+        self.remarks_lineedit.setObjectName("remarks_lineedit")
+        self.remarks_lineedit.setText(book_data["remarks"])
+        self.gridLayout_2.addWidget(self.remarks_lineedit, 10, 0, 1, 1)
+
+        self.remarks_label = QLabel(self.details_groupBox)
+        self.remarks_label.setText("הערות")
+        self.gridLayout_2.addWidget(self.remarks_label, 10, 1, 1, 1)
+
+        self.verticalLayout.addWidget(self.details_groupBox)
+
+        self.amount_frame = QFrame(self.main_widget)
+        self.amount_frame.setFrameShape(QFrame.StyledPanel)
+        self.amount_frame.setFrameShadow(QFrame.Raised)
+        self.amount_frame.setObjectName("amount_frame")
+
+        self.verticalLayout_2 = QVBoxLayout(self.amount_frame)
+        self.verticalLayout_2.setObjectName("verticalLayout_2")
+
+        self.amount_label = QLabel(self.amount_frame)
+        self.amount_label.setAlignment(QtCore.Qt.AlignBottom | QtCore.Qt.AlignLeading | QtCore.Qt.AlignLeft)
+        self.amount_label.setText("בחר כמות:")
+        self.verticalLayout_2.addWidget(self.amount_label)
+
+        self.amount_lineedit = QLineEdit(self.amount_frame)
+        self.amount_label.setText("בחר כמות:")
+        self.verticalLayout_2.addWidget(self.amount_lineedit)
+
+        self.verticalLayout.addWidget(self.amount_frame)
+
+        self.OK_and_Cancel_buttonBox = QDialogButtonBox(self.main_widget)
+        self.OK_and_Cancel_buttonBox.setOrientation(QtCore.Qt.Horizontal)
+        self.OK_and_Cancel_buttonBox.setStandardButtons(
+            QDialogButtonBox.Cancel | QDialogButtonBox.Ok)
+        self.OK_and_Cancel_buttonBox.setCenterButtons(True)
+        self.OK_and_Cancel_buttonBox.setObjectName("OK_and_Cancel_buttonBox")
+        self.verticalLayout.addWidget(self.OK_and_Cancel_buttonBox)
+        self.OK_and_Cancel_buttonBox.button(QtWidgets.QDialogButtonBox.Cancel).setText("ביטול")
+        self.OK_and_Cancel_buttonBox.button(QtWidgets.QDialogButtonBox.Ok).setText("אישור")
+        self.gridLayout.addWidget(self.main_widget, 0, 0, 1, 1)
+
+        self.OK_and_Cancel_buttonBox.accepted.connect(self.Duplicate_book_Ok_clicked)
+        self.OK_and_Cancel_buttonBox.rejected.connect(self.reject)  # type: ignore
+        QtCore.QMetaObject.connectSlotsByName(self)
+
+
+    def Duplicate_book_Ok_clicked(self):
+        # A function to generate a 4-digit random number
+        def generate_random_number():
+            return str(random.randint(1000, 9999))
+
+        # A function to check if the number already exists in the JSON file as a book_id for one of the books
+        def is_number_exists(number, data):
+            books_ids = []
+            for book in data['books']:
+                books_ids.append(book['book_id'])
+            # לולאה שמבצעת את הבדיקה
+            for books_id in books_ids:
+                if str(books_id) == str(number):
+                    return True
+            return False
+
+        selected_quantity = self.amount_lineedit.text()
+        if selected_quantity == "":
+            selected_quantity = 1
+        # Loop to create this book in the selected quantity
+        for _ in range(int(selected_quantity)):
+            archive_file_content = read_archive_json()
+            while True:
+                random_number = generate_random_number()
+                if not is_number_exists(random_number, archive_file_content):
+                    break
+            self.remarks = self.remarks_lineedit.text().strip()
+            self.book_type = self.book_type_combobox.currentText().strip()
+            if self.book_type == "בחר סוג ספר":
+                self.book_type = "לא נבחר"
+            self.book_condition = self.book_condition_combobox.currentText().strip()
+            if self.book_condition == "בחר מצב ספר":
+                self.book_condition = "לא נבחר"
+            self.shelf = self.shelf_lineedit.text().strip()
+            self.publisher = self.publisher_lineedit.text().strip()
+            self.author = self.author_lineedit.text().strip()
+            self.age_group = self.age_group_lineedit.text().strip()
+            self.grade = self.grade_lineedit.text().strip()
+            self.series_part = self.series_part_lineedit.text().strip()
+            self.series_name = self.series_name_lineedit.text().strip()
+            self.book_title = self.book_title_lineedit.text().strip()
+            self.book_id = str(random_number)
+
+            self.create_new_books()
+
+        self.close()
 
     def create_new_books(self):
-        data = read_archive_json()
-        # יצור אובייקט חדש לספר
+        archive_file_content = read_archive_json()
+        # Create a new book object
         new_book = {
             "remarks": self.remarks,
             "book_condition": self.book_condition,
@@ -1190,20 +1114,252 @@ class AddBooksWindow(QDialog):
             "book_title": self.book_title,
             "book_id": self.book_id
         }
+        # Add the new book to the dictionary variable that contains all the books
+        archive_file_content['books'].append(new_book)
+        # Update the file with the updated dictionary variable
+        write_update_to_the_archive_json(archive_file_content)
 
-        # הוסף את הספר החדש לרשימת הספרים בקובץ JSON
-        data['books'].append(new_book)
 
-        # שמור את הקובץ בחזרה
-        with open('dependence/ArcFiles/archive.json', 'w', encoding='utf-8') as file:
-            json.dump(data, file, ensure_ascii=False, indent=4)
+class editing_book_details_dialog(QDialog):
+    def __init__(self, book_data):
+        super().__init__()
+
+        self.Creating_a_editing_book_details_dialog_GUI(book_data)
+
+    def Creating_a_editing_book_details_dialog_GUI(self, book_data):
+        self.this_original_book_id = book_data["book_id"]
+        self.setWindowTitle(f"עריכת ספר {self.this_original_book_id}")
+        self.setFixedSize(400, 600)
+        self.setWindowIcon(QIcon('dependence/images/edit_book.png'))
+
+        # Creating the main layout/tunnel/תַסדִיר according to which all components will be arranged
+        # In this case, they will be: save_button, cancel_button, row_layout
+        layout = QVBoxLayout()
+
+        # An array to contain the QLineEdit and QComboBox widgets in the window
+        self.widgets_dict = {}
+
+        # An array that contains the text to be given to the labels
+        labels_names = [
+            "מְזַהָה סֵפֶר",
+            "שָׂם הַסֵּפֶר",
+            "שָׂם הַסִּדְרָה",
+            "חֵלֶק בְּסִדְרָה",
+            "כִּתָּה",
+            "שִׁכְבַת גִּיל",
+            "מְחַבֵּר",
+            "מוֹצִיא לָאוֹר",
+            "מַדָּף",
+            "כְּמוֹת בְּאַרְכִיּוֹן",
+            "מֻשְׁאָל",
+            "מַצַּב הַסֵּפֶר",
+            "תַּאֲרִיךְ הַהַשְׁאָלָה",
+            "סוּג הַסֵּפֶר",
+            "שֵׁם הַשּׁוֹאֵל/הַלּוֹקֵחַ",
+            "תְּעוּדַת זֶהוּת",
+            "הֶעָרוֹת"
+        ]
+
+        # A loop that creates a QLabel and a QLineEdit
+        for key, value in enumerate(book_data):
+            # Creating labels
+            label = QLabel(labels_names[key] + ":")
+            # Condition only for the label of book_id
+            if value == "book_id":
+                label.setText(labels_names[key] + " (לֹא מֻמְלַץ לְשַׁנּוֹת):")
+                label.setStyleSheet("color: red;")
+
+            # If the key is not "book_type" or "book_condition", QLineEdit will be created and added to the layout
+            if value not in ["book_type", "book_condition"]:
+                edit_line = QLineEdit(book_data[value])
+                # Creating a QHBoxLayout and adding the label and LineEdit to it
+                row_layout = QHBoxLayout()
+                row_layout.addWidget(edit_line)
+                row_layout.addWidget(label)
+                # Adding the HBoxLayout to the main layout
+                layout.addLayout(row_layout)
+                # Add edit_line to the widgets dictionary
+                self.widgets_dict[value] = edit_line
+            # For the data "book_type" or "book_condition", creates a QComboBox
+            elif value == "book_condition":
+                # Creating a QComboBox for book_condition and adding it to the layout
+                combo_box = QComboBox()
+                if not value in ["חדש", "משומש", "פתור/כתוב", "קרוע", "לא ידוע"]:
+                    combo_box.addItem(book_data[value])
+                combo_box.addItem("חדש")
+                combo_box.addItem("משומש")
+                combo_box.addItem("פתור/כתוב")
+                combo_box.addItem("קרוע")
+                combo_box.addItem("לא ידוע")
+                combo_box.setCurrentText(book_data[value])
+                # Creating a QHBoxLayout and adding the label and ComboBox to it
+                row_layout = QHBoxLayout()
+                row_layout.addWidget(combo_box)
+                row_layout.addWidget(label)
+                # Adding the HBoxLayout to the main layout
+                layout.addLayout(row_layout)
+                # Add combo_box to the widgets dictionary
+                self.widgets_dict[value] = combo_box
+            elif value == "book_type":
+                # Creating a QComboBox for book_type and adding it to the layout
+                combo_box = QComboBox()
+                if not value in ["קודש", "כתיבה", "קריאה", "לימוד"]:
+                    combo_box.addItem(book_data[value])
+                combo_box.addItem("קודש")
+                combo_box.addItem("כתיבה")
+                combo_box.addItem("קריאה")
+                combo_box.addItem("לימוד")
+                combo_box.addItem("אחר")
+                combo_box.setCurrentText(book_data[value])
+                # Creating a QHBoxLayout and adding the label and ComboBox to it
+                row_layout = QHBoxLayout()
+                row_layout.addWidget(combo_box)
+                row_layout.addWidget(label)
+
+                # Adding the HBoxLayout to the main layout
+                layout.addLayout(row_layout)
+                # Add combo_box to the widgets dictionary
+                self.widgets_dict[value] = combo_box
+
+        self.setLayout(layout)
+
+        # Create a "Save" button
+        save_button = QPushButton("שמור", self)
+        save_button.clicked.connect(self.save_changes)
+        layout.addWidget(save_button)
+        # Create a "Cancel" button
+        cancel_button = QPushButton("בטל", self)
+        cancel_button.clicked.connect(self.accept)
+        layout.addWidget(cancel_button)
+
+    def save_changes(self):
+        # Building a dictionary to store the current content in the input fields
+        user_input_dict = {key: (widget.text() if isinstance(widget, QLineEdit) else widget.currentText()) for
+                           key, widget in self.widgets_dict.items()}
+
+        # Check if the user change the book id field
+        if user_input_dict["book_id"] != self.this_original_book_id:
+            archive_file_content = read_archive_json()
+            for book in archive_file_content["books"]:
+                # Check if there is another book with the chosen id
+                if book["book_id"] == user_input_dict["book_id"]:
+                    # The error message
+                    error_message = f"המזהה החדש שבחרת הינו כבר בשימוש ע\"י ספר אחר,\nשינוי המזהה {self.this_original_book_id} לא עבר בהצלחה"
+                    # Error message window
+                    error_box = QtWidgets.QMessageBox()
+                    error_box.setIcon(QtWidgets.QMessageBox.Critical)
+                    error_box.setWindowTitle("שגיאה")
+                    error_box.setText(error_message)
+                    # Display the message to the user
+                    error_box.exec_()
+                user_input_dict["book_id"] = self.this_original_book_id
+
+        # Locating the current book in the archive and injecting its details update
+        archive_file_content = read_archive_json()
+        for i, book in enumerate(archive_file_content["books"]):
+            # Locating the book by its ID
+            if book["book_id"] == self.this_original_book_id:
+                archive_file_content["books"][i] = user_input_dict
+                break
+
+        # Here you can save the updated information to the JSON file
+        write_update_to_the_archive_json(archive_file_content)
+
+        # Close the dialog
+        self.accept()
+
+class Add_new_books_dialog(QDialog):
+    def __init__(self):
+        super().__init__()
+
+        self.Creating_a_add_new_books_dialog_GUI()
+
+    def Creating_a_add_new_books_dialog_GUI(self):
+        self.setWindowTitle("הוספת ספרים")
+        self.setFixedSize(350, 650)
+        self.setWindowIcon(QIcon('dependence/images/add_books.png'))
+
+        layout = QVBoxLayout()
+        self.setLayout(layout)
+
+        # Creating all widgets
+        self.title_label = QLabel("שם הספר:")
+        layout.addWidget(self.title_label)
+        self.book_title_lineedit = QLineEdit()
+        layout.addWidget(self.book_title_lineedit)
+
+        self.series_name_label = QLabel("שם הסדרה:")
+        layout.addWidget(self.series_name_label)
+        self.series_name_lineedit = QLineEdit()
+        layout.addWidget(self.series_name_lineedit)
+
+        self.series_part_label = QLabel("חלק בסדרה:")
+        layout.addWidget(self.series_part_label)
+        self.series_part_lineedit = QLineEdit()
+        layout.addWidget(self.series_part_lineedit)
+
+        self.grade_label = QLabel("כיתה:")
+        layout.addWidget(self.grade_label)
+        self.grade_lineedit = QLineEdit()
+        layout.addWidget(self.grade_lineedit)
+
+        self.age_group_label = QLabel("שכבת גיל:")
+        layout.addWidget(self.age_group_label)
+        self.age_group_lineedit = QLineEdit()
+        layout.addWidget(self.age_group_lineedit)
+
+        self.author_label = QLabel("מחבר:")
+        layout.addWidget(self.author_label)
+        self.author_lineedit = QLineEdit()
+        layout.addWidget(self.author_lineedit)
+
+        self.publisher_label = QLabel("מוציא לאור:")
+        layout.addWidget(self.publisher_label)
+        self.publisher_lineedit = QLineEdit()
+        layout.addWidget(self.publisher_lineedit)
+
+        self.shelf_label = QLabel("מדף:")
+        layout.addWidget(self.shelf_label)
+        self.shelf_lineedit = QLineEdit()
+        layout.addWidget(self.shelf_lineedit)
+
+        self.book_condition_label = QLabel("מצב הספר:")
+        layout.addWidget(self.book_condition_label)
+        self.book_condition_combobox = QComboBox()
+        self.book_condition_combobox.addItems(["בחר מצב ספר", "חדש", "משומש", "פתור/כתוב", "קרוע", "לא ידוע"])
+        layout.addWidget(self.book_condition_combobox)
+
+        self.book_type_label = QLabel("סוג הספר:")
+        layout.addWidget(self.book_type_label)
+        self.book_type_combobox = QComboBox()
+        self.book_type_combobox.addItems(["בחר סוג ספר", "קודש", "כתיבה", "קריאה", "לימוד", "אחר"])
+        layout.addWidget(self.book_type_combobox)
+
+        self.remarks_label = QLabel("הערות:")
+        layout.addWidget(self.remarks_label)
+        self.remarks_lineedit = QLineEdit()
+        layout.addWidget(self.remarks_lineedit)
+
+        self.amount_label = QLabel("כמות:")
+        layout.addWidget(self.amount_label)
+        self.amount_lineedit = QLineEdit()
+        layout.addWidget(self.amount_lineedit)
+        # Limiting input to digits only
+        amount_validator = QIntValidator()
+        self.amount_lineedit.setValidator(amount_validator)
+
+        # Create a "Save" button
+        self.save_button = QPushButton("שמור")
+        self.save_button.clicked.connect(self.save_button_clicked)
+        layout.addWidget(self.save_button)
+
 
     def save_button_clicked(self):
-        # פונקציה ליצירת מספר רנדומלי בעל 5 ספרות
+        # A function to generate a 4-digit random number
         def generate_random_number():
-            return str(random.randint(10000, 99999))
+            return str(random.randint(1000, 9999))
 
-        # פונקציה לבדיקה אם המספר קיים בקובץ JSON
+        # A function to check if the number already exists in the JSON file as a book_id for one of the books
         def is_number_exists(number, data):
             books_ids = []
             for book in data['books']:
@@ -1214,204 +1370,96 @@ class AddBooksWindow(QDialog):
                     return True
             return False
 
-        self.amount = self.amount_lineedit.text()
-        if self.amount == "":
-            self.amount = 1
-        for _ in range(int(self.amount)):
-
-            data = read_archive_json()
+        selected_quantity = self.amount_lineedit.text()
+        if selected_quantity == "":
+            selected_quantity = 1
+        # Loop to create this book in the selected quantity
+        for _ in range(int(selected_quantity)):
+            archive_file_content = read_archive_json()
             while True:
                 random_number = generate_random_number()
-                if not is_number_exists(random_number, data):
+                if not is_number_exists(random_number, archive_file_content):
                     break
-
             self.remarks = self.remarks_lineedit.text().strip()
             self.book_type = self.book_type_combobox.currentText().strip()
-            self.book_condition = self.book_status_combobox.currentText().strip()
+            if self.book_type == "בחר סוג ספר":
+                self.book_type = "לא נבחר"
+            self.book_condition = self.book_condition_combobox.currentText().strip()
+            if self.book_condition == "בחר מצב ספר":
+                self.book_condition = "לא נבחר"
             self.shelf = self.shelf_lineedit.text().strip()
             self.publisher = self.publisher_lineedit.text().strip()
             self.author = self.author_lineedit.text().strip()
             self.age_group = self.age_group_lineedit.text().strip()
             self.grade = self.grade_lineedit.text().strip()
             self.series_part = self.series_part_lineedit.text().strip()
-            self.series_name = self.series_lineedit.text().strip()
-            self.book_title = self.title_lineedit.text().strip()
+            self.series_name = self.series_name_lineedit.text().strip()
+            self.book_title = self.book_title_lineedit.text().strip()
             self.book_id = str(random_number)
 
             self.create_new_books()
 
         self.close()
 
+    def create_new_books(self):
+        archive_file_content = read_archive_json()
+        # Create a new book object
+        new_book = {
+            "remarks": self.remarks,
+            "book_condition": self.book_condition,
+            "amount_in_archive": "",
+            "shelf": self.shelf,
+            "loaning_date": "",
+            "borrower_name": "",
+            "borrower_id": "",
+            "is_borrowed": "לא",
+            "series_part": self.series_part,
+            "series_name": self.series_name,
+            "publisher": self.publisher,
+            "author": self.author,
+            "age_group": self.age_group,
+            "grade": self.grade,
+            "book_type": self.book_type,
+            "book_title": self.book_title,
+            "book_id": self.book_id
+        }
+        # Add the new book to the dictionary variable that contains all the books
+        archive_file_content['books'].append(new_book)
+        # Update the file with the updated dictionary variable
+        write_update_to_the_archive_json(archive_file_content)
 
-class SettingsDialog(QDialog):
-    def __init__(self, book_data):
-        super().__init__()
-
-        self.initUI(book_data)
-
-    def initUI(self, book_data):
-        # יצירת כל הווידג'טים
-        self.gridLayout = QtWidgets.QGridLayout(self)
-        self.gridLayout.setObjectName("gridLayout")
-
-        self.frame = QtWidgets.QFrame(self)
-        self.frame.setFrameShape(QtWidgets.QFrame.StyledPanel)
-        self.frame.setFrameShadow(QtWidgets.QFrame.Raised)
-        self.frame.setObjectName("frame")
-
-        self.delete_book_button = QtWidgets.QPushButton(self.frame)
-        self.delete_book_button.setGeometry(QtCore.QRect(20, 20, 150, 150))
-        self.delete_book_button.setObjectName("delete_book_button")
-        self.delete_book_button.setText("")  # הטקסט יוסר לגמרי
-        self.delete_book_button.clicked.connect(lambda: self.delete_this_book(book_data))
-        #self.delete_book_button.clicked.connect(lambda state, book_id=book_data[0]: self.delete_this_book(book_id))
-        # קביעת רקע כתמונה
-        self.delete_book_button_pixmap = QPixmap('dependence/images/delete_book.png')
-        self.delete_book_button.setIconSize(self.delete_book_button.size())
-        self.delete_book_button.setIcon(QIcon(self.delete_book_button_pixmap))
-
-        self.duplicate_book_button = QtWidgets.QPushButton(self.frame)
-        self.duplicate_book_button.setGeometry(QtCore.QRect(225, 20, 150, 150))
-        self.duplicate_book_button.setObjectName("duplicate_book_button")
-        self.duplicate_book_button.setText("")  # הטקסט יוסר לגמרי
-        #self.edit_book_button.clicked.connect(lambda: self.open_edit_dialog(book_data))
-        # קביעת רקע כתמונה
-        self.duplicate_book_button_pixmap = QPixmap('dependence/images/add_book.png')
-        self.duplicate_book_button.setIconSize(self.duplicate_book_button.size())
-        self.duplicate_book_button.setIcon(QIcon(self.duplicate_book_button_pixmap))
-
-        self.Borrow_book_button = QtWidgets.QPushButton(self.frame)
-        self.Borrow_book_button.setGeometry(QtCore.QRect(430, 20, 150, 150))
-        self.Borrow_book_button.setObjectName("Borrow_book_button")
-        self.Borrow_book_button.setText("")  # הטקסט יוסר לגמרי
-        self.Borrow_book_button.clicked.connect(lambda: self.lend_or_return_book(book_data))
-        # self.edit_book_button.clicked.connect(lambda: self.open_edit_dialog(book_data))
-        # קביעת רקע כתמונה
-        self.Borrow_book_button_pixmap = QPixmap('dependence/images/nook_return.png')
-        self.Borrow_book_button.setIconSize(self.Borrow_book_button.size())
-        self.Borrow_book_button.setIcon(QIcon(self.Borrow_book_button_pixmap))
-
-        if book_data[10] == "לא":
-            self.Borrow_book_button_pixmap = QPixmap('dependence/images/book_lend.png')
-            self.Borrow_book_button.setIconSize(self.Borrow_book_button.size())
-            self.Borrow_book_button.setIcon(QIcon(self.Borrow_book_button_pixmap))
-
-        self.edit_book_button = QtWidgets.QPushButton(self.frame)
-        self.edit_book_button.setGeometry(QtCore.QRect(635, 20, 150, 150))
-        self.edit_book_button.setObjectName("edit_book_button")
-        self.edit_book_button.setText("")  # הטקסט יוסר לגמרי
-        self.edit_book_button.clicked.connect(lambda: self.open_edit_dialog(book_data))
-        # קביעת רקע כתמונה
-        self.edit_book_button_pixmap = QPixmap('dependence/images/edit_book.png')
-        self.edit_book_button.setIconSize(self.edit_book_button.size())
-        self.edit_book_button.setIcon(QIcon(self.edit_book_button_pixmap))
-
-        SButtons = [
-            self.delete_book_button,
-            self.duplicate_book_button,
-            self.Borrow_book_button,
-            self.edit_book_button
-        ]
-
-        for i in SButtons:
-            i.setStyleSheet(
-                "QPushButton {"
-                "   border-radius: 20px;"  # העגולות תלמית כאן
-                "   border: 2px solid #d0d0d0;"  # צבע המסגרת
-                "}"
-                "QPushButton:hover {"
-                "   border: 2px solid #808080;"  # צבע המסגרת בעת העכבר מעל הכפתור
-                "}"
-                "QPushButton:hover:pressed {"
-                "   border: 2px solid #4a4a4a;"  # צבע המסגרת בעת העכבר מעל הכפתור
-                "}"
-            )
-
-        self.gridLayout.addWidget(self.frame, 0, 0, 1, 1)
-
-        self.setWindowTitle("SettingsWindow")
-        self.setGeometry(550, 400, 827, 208)
-
-
-    def open_edit_dialog(self, book_data):
-        self.close()
-        dialog = EditBookDialog(book_data)
-        dialog.exec_()
-
-    def lend_or_return_book(self, book_data):
-        self.close()
-
-        data = read_archive_json()
-        # לולאה עבור כל ספר ברשימת הספרים
-        for book in data['books']:
-            # בדוק אם ה"book_id" של הספר הוא 10000
-            if book['book_id'] == book_data[0]:
-                if book['is_borrowed'] == "לא":
-                    # טען את תוכן הקובץ JSON
-                    dialog5 = Borrower_detailsDialog()
-                    dialog5.exec_()
-                    if dialog5.ok_clicked:
-                        book['is_borrowed'] = "כן"
-                        dialog5.role = " (" + dialog5.role + ")"
-                        if dialog5.role == " (ללא)":
-                            dialog5.role = ""
-                        book['borrower_name'] = dialog5.first_name + " " + dialog5.last_name + dialog5.role
-                        book['borrower_id'] = dialog5.borrower_id
-                        book['remarks'] = dialog5.remarks
-                        current_date = datetime.date.today()
-                        formatted_date = current_date.strftime("%d/%m/%Y")
-                        book['loaning_date'] = str(formatted_date)
-
-                elif book['is_borrowed'] == "כן":
-                    book['is_borrowed'] = "לא"
-                    book['borrower_name'] = ""
-                    book['borrower_id'] = ""
-                    book['remarks'] = ""
-                    book['loaning_date'] = ""
-
-                        # עדכן את המידע בקובץ JSON
-            with open('dependence/ArcFiles/archive.json', 'w', encoding='utf-8') as file:
-                json.dump(data, file, ensure_ascii=False, indent=4)
-
-
-    def delete_this_book(self, book_data):
-        self.close()
-        # השתמש בפונקציה כדי למחוק ספר לפי ה-ID שלו
-        id = [book_data[0]]
-        delete_book_by_id(id)
-        self.close()
-
-
-class are_you_sure_window(QDialog):
+class Are_you_sure_window(QDialog):
     def __init__(self, books_ids):
         super().__init__()
-        self.initUI(books_ids)
 
-    def initUI(self, books_ids):
-        self.data = False
+        self.Creating_a_Add_new_books_dialog_GUI(books_ids)
+
+    def Creating_a_Add_new_books_dialog_GUI(self, books_ids):
+        self.sure_to_delete = False
         List_of_books_awaiting_deletion_approval = []
-        self.setWindowTitle('עשרת השמות')
-        self.setGeometry(550, 400, 700, 300)
+        self.setWindowTitle('ספרים למחיקה')
+        self.setFixedSize(600, 300)
+        self.setWindowIcon(QIcon('dependence/images/delete_book.png'))
 
         layout = QVBoxLayout(self)
 
-        # הוספת המלל
+        # Create a label
         label = QLabel("האם אתה בטוח שברצונך להסיר את הספרים הבאים מן הארכיון:")
         layout.addWidget(label)
 
-        # הוספת תיבת גלילה
+        # Add a scroll box
         scroll_area = QScrollArea()
         layout.addWidget(scroll_area)
 
-        # תיבת טקסט לתוך תיבת הגלילה
+        # text box into the scroll box
         text_widget = QWidget()
         scroll_area.setWidget(text_widget)
 
         text_layout = QVBoxLayout(text_widget)
 
-        all_books = read_archive_json()
+        archive_file_content = read_archive_json()
 
-        for book in all_books["books"]:
+        for book in archive_file_content["books"]:
             for id in books_ids:
                 if book['book_id'] == id:
                     Book_details = (book['book_id'] + ", " + book['book_title'] + ", " + book['book_type'] + ", " + book['grade']
@@ -1421,28 +1469,26 @@ class are_you_sure_window(QDialog):
                          + ", " + book['remarks'] + ", ")
                     List_of_books_awaiting_deletion_approval.append(Book_details)
 
-        # הוספת השמות לתיבת הטקסט
+        # Adding the books details to the text box
         for name in List_of_books_awaiting_deletion_approval:
             name_label = QLabel(name)
             name_label.setAlignment(QtCore.Qt.AlignTop)
             text_layout.insertWidget(1, name_label)
 
-
         text_widget.setLayout(text_layout)
         scroll_area.setWidgetResizable(True)
 
-        # שורת כפתורים
+        # row for buttons
         buttons_layout = QHBoxLayout()
 
-        # הוספת כפתור "כן"
+        # Added a "Yes" button
         yes_button = QPushButton("כן", self)
         yes_button.clicked.connect(self.on_yes_click)
-
-        # הוספת כפתור "לא"
+        # Added a "No" button
         no_button = QPushButton("לא", self)
-        no_button.clicked.connect(self.on_no_click)
+        no_button.clicked.connect(self.accept)
 
-        # הוספת הכפתורים לפריסת הכפתורים
+        # Adding the buttons to the button layout
         buttons_layout.addWidget(yes_button)
         buttons_layout.addWidget(no_button)
 
@@ -1451,26 +1497,56 @@ class are_you_sure_window(QDialog):
         self.setLayout(layout)
 
     def on_yes_click(self):
-        self.data = True
+        self.sure_to_delete = True
         self.accept()
 
-    def on_no_click(self):
-        self.data = False
-        self.accept()
+class Is_book_returned_dialog(QDialog):
+    def __init__(self, book_data):
+        super().__init__()
+        self.setWindowTitle("האם הספר מוחזר?")
+        self.resize(390, 163)
+        self.setWindowIcon(QIcon('dependence/images/nook_return.png'))
 
+        self.main_widget = QWidget(self)
+        self.verticalLayout = QVBoxLayout(self.main_widget)
 
-class Borrower_detailsDialog(QDialog):
-    def __init__(self, ):
+        font = QtGui.QFont()
+        font.setPointSize(12)
+
+        current_book_borrower_name = book_data["borrower_name"]
+        current_book_name = book_data["book_title"]
+
+        self.is_book_return_label = QLabel(f"האם התלמיד {current_book_borrower_name} החזיר את הספר \"{current_book_name}\"?", self.main_widget)
+        self.is_book_return_label.setFont(font)
+        self.verticalLayout.addWidget(self.is_book_return_label)
+
+        self.delete_remarks_check_box = QCheckBox("למחוק הערות", self.main_widget)
+        self.delete_remarks_check_box.setLayoutDirection(QtCore.Qt.RightToLeft)
+        self.verticalLayout.addWidget(self.delete_remarks_check_box)
+
+        self.yes_and_no_button_box = QDialogButtonBox(QtCore.Qt.Horizontal, self.main_widget)
+        self.yes_and_no_button_box.setStandardButtons(QDialogButtonBox.No | QDialogButtonBox.Yes)
+        self.yes_and_no_button_box.button(QtWidgets.QDialogButtonBox.No).setText("לא")
+        self.yes_and_no_button_box.button(QtWidgets.QDialogButtonBox.Yes).setText("כן")
+        self.verticalLayout.addWidget(self.yes_and_no_button_box)
+
+        self.setLayout(self.verticalLayout)
+
+        self.yes_and_no_button_box.accepted.connect(self.accept)
+        self.yes_and_no_button_box.rejected.connect(self.reject)
+class Borrower_details_dialog(QDialog):
+    def __init__(self, book_remarks):
         super().__init__()
 
-        self.setupUi()
+        self.Creating_a_Borrower_details_dialog_GUI(book_remarks)
 
-    def setupUi(self):
-        self.ok_clicked = False
-        self.setWindowTitle('עשרת השמות')
-        self.setGeometry(700, 400, 400, 300)
+    def Creating_a_Borrower_details_dialog_GUI(self, book_remarks):
+        self.Book_loan_approval = False
+        self.setWindowTitle('פרטי השואל/הלוקח')
+        self.setFixedSize(350, 300)
+        self.setWindowIcon(QIcon('dependence/images/book_lend.png'))
 
-        self.gridLayout = QtWidgets.QGridLayout(self)
+        self.gridLayout = QGridLayout(self)
         self.gridLayout.setObjectName("gridLayout")
 
         self.main_frame = QtWidgets.QFrame(self)
@@ -1574,6 +1650,7 @@ class Borrower_detailsDialog(QDialog):
 
         self.remarks_lineEdit = QtWidgets.QLineEdit(self.remarks_frame)
         self.remarks_lineEdit.setObjectName("remarks_lineEdit")
+        self.remarks_lineEdit.setText(book_remarks)
 
         self.verticalLayout_3.addWidget(self.remarks_lineEdit)
         self.verticalLayout.addWidget(self.remarks_frame)
@@ -1582,19 +1659,18 @@ class Borrower_detailsDialog(QDialog):
 
         self.OK_and_Cancel_buttonBox = QtWidgets.QDialogButtonBox(self)
         self.OK_and_Cancel_buttonBox.setOrientation(QtCore.Qt.Horizontal)
-        self.OK_and_Cancel_buttonBox.setStandardButtons(QtWidgets.QDialogButtonBox.Cancel|QtWidgets.QDialogButtonBox.Ok)
-        self.OK_and_Cancel_buttonBox.setObjectName("OK_and_Cancel_buttonBox")
+        self.OK_and_Cancel_buttonBox.setStandardButtons(
+            QtWidgets.QDialogButtonBox.Cancel | QtWidgets.QDialogButtonBox.Ok)
+        self.OK_and_Cancel_buttonBox.button(QtWidgets.QDialogButtonBox.Cancel).setText("ביטול")
+        self.OK_and_Cancel_buttonBox.button(QtWidgets.QDialogButtonBox.Ok).setText("אישור")
 
         self.gridLayout.addWidget(self.OK_and_Cancel_buttonBox, 1, 0, 1, 1)
 
-        # הוסף לחיצה על כפתור "OK" לפונקציה שתטפל בלחיצה
-        self.OK_and_Cancel_buttonBox.accepted.connect(self.on_ok_clicked)
+        # Assign a function to clicking the "OK" button
+        self.OK_and_Cancel_buttonBox.accepted.connect(self.Ok_clicked)
+        self.OK_and_Cancel_buttonBox.rejected.connect(self.reject)
 
-        # הוסף לחיצה על כפתור "Cancel" לפונקציה שתטפל בלחיצה
-        self.OK_and_Cancel_buttonBox.rejected.connect(self.on_cancel_clicked)
-
-    def on_ok_clicked(self):
-
+    def Ok_clicked(self):
         if (
                 self.first_name_lineEdit.text() == ""
                 or self.last_name_lineEdit.text() == ""
@@ -1606,20 +1682,15 @@ class Borrower_detailsDialog(QDialog):
         self.last_name = self.last_name_lineEdit.text().strip()
         self.borrower_id = self.id_lineEdit.text().strip()
         self.remarks = self.remarks_lineEdit.text().strip()
-        self.ok_clicked = True
-        # סגור את החלון עם פרמטר בוליאני True (המציין שהלחיצה הייתה "OK")
+        self.Book_loan_approval = True
         self.accept()
-
-    def on_cancel_clicked(self):
-        # סגור את החלון עם פרמטר בוליאני False (המציין שהלחיצה הייתה "Cancel" או הסגרת החלון)
-        self.reject()
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)
     window = MainWindow()
     icon = QIcon("dependence\images\Software icon.png")  # החלף את "path_to_your_icon_file.png" בנתיב לקובץ האיקון שלך
     window.setWindowIcon(icon)
-    # הצגת החלון במסך מלא
+    # Display the window in full screen
     window.showMaximized()
 
     sys.exit(app.exec_())
