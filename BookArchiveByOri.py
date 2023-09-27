@@ -3,7 +3,7 @@ from PyQt5.QtWidgets import (QApplication, QMainWindow, QMenuBar, QAction, QTool
                              QScrollArea, QLineEdit, QHBoxLayout, QStatusBar, QDialog, QGroupBox, QGridLayout,
                              QShortcut, QComboBox, QPushButton, QFrame, QSplitter, QCheckBox, QDialogButtonBox, QSizePolicy)
 from PyQt5 import QtCore, QtWidgets, QtGui
-from PyQt5.QtGui import QIcon, QKeySequence, QIntValidator, QPixmap
+from PyQt5.QtGui import QIcon, QKeySequence, QIntValidator, QPixmap, QFont
 import os
 import random
 import json
@@ -15,28 +15,38 @@ def read_archive_json():
         all_books_data = json.load(file)
         return all_books_data
 
+def books_in_archive():
+    archive_file_content = read_archive_json()
+    books_in_archive = archive_file_content["books"]
+    return books_in_archive
+
+def get_number_of_books_in_archive():
+    books_data = books_in_archive()
+    return len(books_data)
+
+
+
 def write_update_to_the_archive_json(file_update):
     archive_path = "dependence/ArcFiles/archive.json"
     with open(archive_path, "w", encoding="utf-8") as file:
         json.dump(file_update, file, ensure_ascii=False, indent=4)
 
-# פונקציה למחיקת ספר לפי ה-ID
+# Function to delete a book by its ID
 def delete_book_by_id(books_ids):
     dialog3 = Are_you_sure_window(books_ids)
     dialog3.exec_()
 
     if dialog3.sure_to_delete:
-        sure_to_delete = read_archive_json()
+        archive_file_content = read_archive_json()
         for id in books_ids:
             # מצא את הספר ברשימת הספרים לפי ה-ID
-            for book in sure_to_delete["books"]:
+            for book in archive_file_content["books"]:
                 if id == book['book_id']:
-                    # מחק את הספר מהרשימה
-                    sure_to_delete["books"].remove(book)
-                    break  # אחרי שמחקנו את הספר, אין טעם להמשיך לחפש
+                    # Delete the book from the list
+                    archive_file_content["books"].remove(book)
 
-            # שמור את המידע חזרה לקובץ JSON
-            write_update_to_the_archive_json(sure_to_delete)
+            # Save the information back to a JSON file
+            write_update_to_the_archive_json(archive_file_content)
 
 class MainWindow(QMainWindow):
     def __init__(self):
@@ -45,6 +55,9 @@ class MainWindow(QMainWindow):
         self.general_widget_scrollArea = None
         self.groupBoxes_to_clear = []
         self.books_details_groupBoxes = []
+
+        self.limit_books_display_amount = True
+        self.limit_books_display = 50
 
         self.borrower_id = ""
         self.book_id = ""
@@ -322,12 +335,33 @@ class MainWindow(QMainWindow):
         self.general_widget_gridLayout = QGridLayout(self.general_widget_scrollArea)
         self.general_widget_gridLayout.addWidget(self.Main_splitter, 0, 0, 1, 1)
 
+
+
+        # צריך לסדר
+        self.Reveal_all_books_button_widget = QWidget(self.general_widget_scrollArea)
+        self.Reveal_all_books_button_widget.setObjectName("widget")
+        self.verticalLayout = QVBoxLayout(self.Reveal_all_books_button_widget)
+        self.verticalLayout.setObjectName("verticalLayout")
+        self.Reveal_all_books_button = QPushButton(self.Reveal_all_books_button_widget)
+        self.Reveal_all_books_button.setText("הצג כל את הספרים")
+        self.Reveal_all_books_button.setObjectName("Reveal_all_books_button")
+        self.Reveal_all_books_button.clicked.connect(self.toggle_limit_books_display)
+        self.verticalLayout.addWidget(self.Reveal_all_books_button)
+        self.general_widget_gridLayout.addWidget(self.Reveal_all_books_button_widget, 1, 0, 1, 1)
+
+        self.no_books_to_dislpay_label = QLabel("אין ספרים להצגה", self.Reveal_all_books_button_widget)
+        # הגדרת פונט מודגש וגדול
+        self.font = QFont()
+        self.font.setBold(True)
+        self.font.setPointSize(70)
+        self.verticalLayout.addWidget(self.no_books_to_dislpay_label)
+
+
         # Create the second splitter to split between every group box
         self.groupBoxes_splitter = QSplitter(self.Main_splitter)
         self.groupBoxes_splitter.setOrientation(QtCore.Qt.Horizontal)
         self.groupBoxes_splitter.setOpaqueResize(True)
         self.groupBoxes_splitter.setChildrenCollapsible(False)
-
         # Create group boxes and insert them into the splitter:
         # remarks
         self.remarks_groupBox = QtWidgets.QGroupBox(self.groupBoxes_splitter)
@@ -530,12 +564,18 @@ class MainWindow(QMainWindow):
         self.tools_groupBox_gridLayout.setContentsMargins(0, -1, 0, -1)
         self.groupBoxes_to_clear.append(self.tools_groupBox_gridLayout)
 
+    def toggle_limit_books_display(self):
+        self.limit_books_display_amount = False
+        self.load_archive()
+        self.limit_books_display_amount = True
+
+
     def load_archive(self):
         self.clear_books_details_groupBoxes()
         self.calculate_each_book_amount_in_the_archive()
-
-        archive_file_content = read_archive_json()
-        for book in archive_file_content["books"]:
+        # Reset the amount of books displayed
+        Rows_of_books_entered_the_display = 0
+        for book in books_in_archive():
             # A condition that compares the content written in the search to the details of the books
             if (
                     (self.line_edit_book_id.text() == "" or self.line_edit_book_id.text() in book["book_id"]) and
@@ -600,11 +640,27 @@ class MainWindow(QMainWindow):
                     if groupBox.objectName() == "tools_groupBox":
                         groupBox.layout().addWidget(edit_button)
 
+                # Limit display to prevent delays, prat 1 (of 2)
+                Rows_of_books_entered_the_display += 1
+
+            # Limit display to prevent delays, prat 2 (of 2)
+            if not self.limit_books_display_amount:
+                # Don't show Reveal_all_books_button if limit_books_display_amount
+                self.Reveal_all_books_button.close()
+                # go back to the start in the loop
+                continue
+
+            # If we have reached the display limit then stop the loop and display the button Reveal_all_books_button
+            if Rows_of_books_entered_the_display == self.limit_books_display:
+                self.Reveal_all_books_button.show()
+                break
+
         # Creating an empty label inside each groupBox to attach the lineedits
         for groupBox in self.books_details_groupBoxes:
             name_label = QLabel("")
             name_label.setAlignment(QtCore.Qt.AlignTop)
             groupBox.layout().addWidget(name_label)
+
 
         """
         # A loop that hides all the G from the display,
@@ -627,9 +683,9 @@ class MainWindow(QMainWindow):
     #  and then edits the amount_in_archive value in each book accordingly.
     def calculate_each_book_amount_in_the_archive(self):
         duplicate_book_IDs = []
-        all_books = read_archive_json()
+        archive_file_content = read_archive_json()
         # A loop that goes through all the books
-        for book in all_books["books"]:
+        for book in archive_file_content["books"]:
             if book["book_id"] not in duplicate_book_IDs:
                 duplicate_book_IDs = []
                 current_book_title = book["book_title"]
@@ -640,7 +696,7 @@ class MainWindow(QMainWindow):
                 current_author = book["author"]
                 current_publisher = book["publisher"]
                 # A loop that compares the details of the current book with the details of the other books
-                for book in all_books["books"]:
+                for book in archive_file_content["books"]:
                     if (
                             current_book_title == book["book_title"]
                             and current_series_name == book["series_name"]
@@ -658,16 +714,15 @@ class MainWindow(QMainWindow):
                         continue
 
                 # A loop that will go through the matching books and set their amount_in_archive value according to their amount
-                for book in all_books["books"]:
+                for book in archive_file_content["books"]:
                     if book["book_id"] in duplicate_book_IDs:
                         book["amount_in_archive"] = str(len(duplicate_book_IDs))
                 # After we have made the changes in the books, we will save the file again
-                write_update_to_the_archive_json(all_books)
+                write_update_to_the_archive_json(archive_file_content)
 
     # A function to break down the book into details and then send the details to the settings window
     def edit_book_data(self, this_book_id):
-        archive_file_content = read_archive_json()
-        for book in archive_file_content["books"]:
+        for book in books_in_archive():
             if book["book_id"] == this_book_id:
                 book_data = {}
                 # Adding the book details to the dictionary
@@ -798,9 +853,9 @@ class book_settings_dialog(QDialog):
     def lend_or_return_book(self, book_data):
         self.close()
 
-        data = read_archive_json()
+        archive_file_content = read_archive_json()
         # Loop over all books
-        for book in data['books']:
+        for book in archive_file_content['books']:
             # If the book is the current book
             if book['book_id'] == book_data["book_id"]:
                 # If the value is_borrowed is negative
@@ -833,7 +888,7 @@ class book_settings_dialog(QDialog):
                             book['remarks'] = ""
 
             # Update the information in the JSON file
-            write_update_to_the_archive_json(data)
+            write_update_to_the_archive_json(archive_file_content)
 
     def open_Borrower_details_dialog(self, book_remarks):
         Borrower_details = Borrower_details_dialog(book_remarks)
