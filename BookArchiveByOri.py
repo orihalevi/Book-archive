@@ -1,13 +1,18 @@
 import sys
-from PyQt5.QtWidgets import (QApplication, QMainWindow, QMenuBar, QAction, QToolBar, QVBoxLayout, QWidget, QLabel,
-                             QScrollArea, QLineEdit, QHBoxLayout, QStatusBar, QDialog, QGroupBox, QGridLayout,
-                             QShortcut, QComboBox, QPushButton, QFrame, QSplitter, QCheckBox, QDialogButtonBox, QSizePolicy)
-from PyQt5 import QtCore, QtWidgets, QtGui
-from PyQt5.QtGui import QIcon, QKeySequence, QIntValidator, QPixmap, QFont
-import os
 import random
 import json
 import datetime
+import os
+from functools import partial
+
+from PyQt5.QtCore import Qt
+from PyQt5.QtWidgets import (QApplication, QMainWindow, QMenuBar, QAction, QToolBar, QVBoxLayout, QWidget, QLabel,
+                             QScrollArea, QLineEdit, QHBoxLayout, QStatusBar, QDialog, QGroupBox, QGridLayout,
+                             QShortcut, QComboBox, QPushButton, QFrame, QSplitter, QCheckBox, QDialogButtonBox,
+                             QSizePolicy)
+from PyQt5 import QtCore, QtWidgets, QtGui
+from PyQt5.QtGui import QIcon, QKeySequence, QIntValidator, QPixmap, QFont
+
 
 def read_archive_json():
     archive_path = "dependence/ArcFiles/archive.json"
@@ -15,15 +20,16 @@ def read_archive_json():
         all_books_data = json.load(file)
         return all_books_data
 
+
 def books_in_archive():
     archive_file_content = read_archive_json()
     books_in_archive = archive_file_content["books"]
     return books_in_archive
 
+
 def get_number_of_books_in_archive():
     books_data = books_in_archive()
     return len(books_data)
-
 
 
 def write_update_to_the_archive_json(file_update):
@@ -31,33 +37,44 @@ def write_update_to_the_archive_json(file_update):
     with open(archive_path, "w", encoding="utf-8") as file:
         json.dump(file_update, file, ensure_ascii=False, indent=4)
 
-# Function to delete a book by its ID
-def delete_book_by_id(books_ids):
-    dialog3 = Are_you_sure_window(books_ids)
-    dialog3.exec_()
 
-    if dialog3.sure_to_delete:
+# Function to delete a book by its ID
+def delete_book_by_its_id(books_to_delete):
+    Are_you_sure = Are_you_sure_window(books_to_delete)
+    Are_you_sure.exec_()
+    if Are_you_sure.sure_to_delete:
         archive_file_content = read_archive_json()
-        for id in books_ids:
+        for id in books_to_delete["books"]:
             # מצא את הספר ברשימת הספרים לפי ה-ID
             for book in archive_file_content["books"]:
-                if id == book['book_id']:
+                if id['book_id'] == book['book_id']:
                     # Delete the book from the list
                     archive_file_content["books"].remove(book)
 
             # Save the information back to a JSON file
             write_update_to_the_archive_json(archive_file_content)
 
+
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
 
+        self.selected_books_borrowed = None
+        self.all_books_in_display = {"books": []}
+        self.selected_books_dictionary = {"books": []}
+        self.select_all_on = False
+        self.can_borrowed = True
+        self.is_somt = False
         self.general_widget_scrollArea = None
         self.groupBoxes_to_clear = []
         self.books_details_groupBoxes = []
 
         self.limit_books_display_amount = True
         self.limit_books_display = 50
+
+
+
+        self.multiple_books_editing_mode = False
 
         self.borrower_id = ""
         self.book_id = ""
@@ -102,6 +119,9 @@ class MainWindow(QMainWindow):
 
         self.create_bars()
         self.create_search_engine_graphical_interface()
+        self.create_multiple_books_tools_groupBox()
+        # close the multiple_books_tools_groupBox
+        self.multiple_books_tools_groupBox.close()
         self.creating_a_frame_with_a_scroll_bar()
         self.load_archive()
 
@@ -111,7 +131,7 @@ class MainWindow(QMainWindow):
         file_menu = menu_bar.addMenu("קובץ")
 
         open_folder_action = QAction("בחר מתיקייה", self)
-        #open_folder_action.triggered.connect(self.open_file)
+        # open_folder_action.triggered.connect(self.open_file)
         file_menu.addAction(open_folder_action)
 
         exit_action = QAction("יציאה", self)
@@ -120,7 +140,7 @@ class MainWindow(QMainWindow):
 
         tools_menu = menu_bar.addMenu("כלים")
         Manage_json_files_action = QAction("נהל קבצי json", self)
-        #Manage_json_files_action.triggered.connect(self.manage_json_files)
+        # Manage_json_files_action.triggered.connect(self.manage_json_files)
         tools_menu.addAction(Manage_json_files_action)
 
         self.setMenuBar(menu_bar)
@@ -129,19 +149,21 @@ class MainWindow(QMainWindow):
         tool_bar = QToolBar("סרגל כלים", self)
         self.addToolBar(tool_bar)
         # create the save button
-        add_books_action = QAction(QIcon(r'dependence\images\add_books.png'), 'הוסף ספרים', self)
+        add_books_action = QAction(QIcon(r'dependence\images\add_books.png'), 'הוסף ספרים לארכיון', self)
         # Create a shortcut for Ctrl+S and Ctrl+ד
-        #add_books_shortcut = QShortcut(QKeySequence('Ctrl+S'), self)
-        #add_books_shortcut.activated.connect(self.add_books_action_triggered)
-        #add_books_shortcut_heb = QShortcut(QKeySequence('Ctrl+ד'), self)
-        #add_books_shortcut_heb.activated.connect(self.add_books_action_triggered)
+        # add_books_shortcut = QShortcut(QKeySequence('Ctrl+S'), self)
+        # add_books_shortcut.activated.connect(self.add_books_action_triggered)
+        # add_books_shortcut_heb = QShortcut(QKeySequence('Ctrl+ד'), self)
+        # add_books_shortcut_heb.activated.connect(self.add_books_action_triggered)
 
         add_books_action.triggered.connect(self.add_books_action_triggered)
         tool_bar.addAction(add_books_action)
+
         # create the clean all button
-        clear_action = QAction(QIcon(r'dependence\images\clear.png'), "נקה הכל", self)
-        clear_action.triggered.connect(self.clear_action_triggered)
-        tool_bar.addAction(clear_action)
+        edit_multiple_books_action = QAction(QIcon(r'dependence\images\edit_multiple_books.png'), "מצב עריכת ספרים מרובים", self)
+        edit_multiple_books_action.triggered.connect(self.edit_multiple_books_triggered)
+        tool_bar.addAction(edit_multiple_books_action)
+
         # create the back button
         back_action = QAction(QIcon(r'dependence\images\back.png'), "חזור", self)
         # Create a shortcut for Ctrl+S and Ctrl+ד
@@ -153,11 +175,20 @@ class MainWindow(QMainWindow):
         back_action.triggered.connect(self.restore_names_triggered)
         tool_bar.addAction(back_action)
 
+    # When the window is resized, this function will be invoked
+    def resizeEvent(self, event):
+        line_edit_size = self.line_edit_shelf.size()
+        Width = line_edit_size.width()
+        # print(f"LineEdit size: Width={line_edit_size.width()}, Height={line_edit_size.height()}")
+        self.is_borrowed_combo_box.setFixedWidth(Width)
+        self.book_condition_combo_box.setFixedWidth(Width)
+        self.book_type_combo_box.setFixedWidth(Width)
 
     def create_search_engine_graphical_interface(self):
         # Create groupBox for the search engine
         search_engine_groupBox = QGroupBox("מנוע חיפוש", self)
-        search_engine_groupBox.setAlignment(QtCore.Qt.AlignRight)   # Aline title to the right
+        search_engine_groupBox.setAlignment(QtCore.Qt.AlignRight)  # Aline title to the right
+        search_engine_groupBox.setContentsMargins(0, 4, 0, 0)
         # Add the components to MainWindow_layout
         self.MainWindow_layout.addWidget(search_engine_groupBox)
 
@@ -265,6 +296,7 @@ class MainWindow(QMainWindow):
         self.book_condition_combo_box.addItem("פתור/כתוב")
         self.book_condition_combo_box.addItem("קרוע")
         self.book_condition_combo_box.addItem("לא ידוע")
+        self.book_condition_combo_box.addItem("לא נבחר")
         self.book_condition_combo_box.currentIndexChanged.connect(self.load_archive)
         self.book_condition_combo_box.setObjectName("fontComboBox_2")
         self.book_condition_combo_box.setPlaceholderText("בחר מצב ספר")
@@ -285,6 +317,7 @@ class MainWindow(QMainWindow):
         self.book_type_combo_box.addItem("קריאה")
         self.book_type_combo_box.addItem("לימוד")
         self.book_type_combo_box.addItem("אחר")
+        self.book_type_combo_box.addItem("לא נבחר")
         self.book_type_combo_box.currentIndexChanged.connect(self.load_archive)
         self.book_type_combo_box.setObjectName("fontComboBox")
         self.book_type_combo_box.setPlaceholderText("בחר סוג ספר")
@@ -311,6 +344,15 @@ class MainWindow(QMainWindow):
         self.line_edit_remarks.setPlaceholderText("הזן הערות (אם יש)")
         lower_frame_grid_layout.addWidget(self.line_edit_remarks, 1, 0, 1, 1)
 
+
+    def splitterMoved(self, pos, index):
+        # הפעולה שתתבצע כאשר הספליטר יוזז
+        # הגדר גודל מינימלי רק לגובה, והרוחב ישנה באופן אוטומטי
+        self.is_borrowed_groupBox.setMinimumWidth(30)
+        self.is_borrowed_groupBox.setMaximumWidth(100)
+        self.book_id_groupBox.setMaximumWidth(100)
+        self.loaning_date_groupBox.setMaximumWidth(130)
+
     def creating_a_frame_with_a_scroll_bar(self):
         # Creating a ScrollArea with a scroll bar for displaying the books details
         self.books_displaying_scrollArea = QtWidgets.QScrollArea(self)
@@ -335,13 +377,24 @@ class MainWindow(QMainWindow):
         self.general_widget_gridLayout = QGridLayout(self.general_widget_scrollArea)
         self.general_widget_gridLayout.addWidget(self.Main_splitter, 0, 0, 1, 1)
 
-
-
         # צריך לסדר
+
         self.Reveal_all_books_button_widget = QWidget(self.general_widget_scrollArea)
         self.Reveal_all_books_button_widget.setObjectName("widget")
+
         self.verticalLayout = QVBoxLayout(self.Reveal_all_books_button_widget)
         self.verticalLayout.setObjectName("verticalLayout")
+
+        self.no_books_to_dislpay_label = QLabel("---סוף הרשימה---", self.Reveal_all_books_button_widget)
+        # הגדרת פונט מודגש וגדול
+        self.font = QFont()
+        self.font.setBold(True)
+        self.font.setPointSize(30)
+        self.no_books_to_dislpay_label.setFont(self.font)  # הפעלת הפונט לתווית
+        self.no_books_to_dislpay_label.setAlignment(
+            QtCore.Qt.AlignVCenter | QtCore.Qt.AlignHCenter)  # מירכז אנכית ואופקית
+        self.verticalLayout.addWidget(self.no_books_to_dislpay_label)
+
         self.Reveal_all_books_button = QPushButton(self.Reveal_all_books_button_widget)
         self.Reveal_all_books_button.setText("הצג כל את הספרים")
         self.Reveal_all_books_button.setObjectName("Reveal_all_books_button")
@@ -349,19 +402,14 @@ class MainWindow(QMainWindow):
         self.verticalLayout.addWidget(self.Reveal_all_books_button)
         self.general_widget_gridLayout.addWidget(self.Reveal_all_books_button_widget, 1, 0, 1, 1)
 
-        self.no_books_to_dislpay_label = QLabel("אין ספרים להצגה", self.Reveal_all_books_button_widget)
-        # הגדרת פונט מודגש וגדול
-        self.font = QFont()
-        self.font.setBold(True)
-        self.font.setPointSize(70)
-        self.verticalLayout.addWidget(self.no_books_to_dislpay_label)
-
-
         # Create the second splitter to split between every group box
         self.groupBoxes_splitter = QSplitter(self.Main_splitter)
         self.groupBoxes_splitter.setOrientation(QtCore.Qt.Horizontal)
         self.groupBoxes_splitter.setOpaqueResize(True)
         self.groupBoxes_splitter.setChildrenCollapsible(False)
+        self.groupBoxes_splitter.splitterMoved.connect(self.splitterMoved)  # Add a function call when the splitter is moved
+        self.groupBoxes_splitter.setHandleWidth(1)  # Here the width of the splitter gap is set to 0 pixels
+
         # Create group boxes and insert them into the splitter:
         # remarks
         self.remarks_groupBox = QtWidgets.QGroupBox(self.groupBoxes_splitter)
@@ -396,8 +444,21 @@ class MainWindow(QMainWindow):
         self.borrower_name_groupBox_gridLayout.setContentsMargins(0, -1, 0, -1)
         self.groupBoxes_to_clear.append(self.borrower_name_groupBox_gridLayout)
 
+        # loaning date
+        self.loaning_date_groupBox = QtWidgets.QGroupBox(self.groupBoxes_splitter)
+        self.loaning_date_groupBox.setAlignment(QtCore.Qt.AlignCenter)
+        self.loaning_date_groupBox.setFlat(True)
+        self.loaning_date_groupBox.setTitle("תאריך השאלה")
+        self.loaning_date_groupBox.setFixedWidth(80)
+        self.books_details_groupBoxes.append(self.loaning_date_groupBox)
+
+        self.loaning_date_groupBox_gridLayout = QGridLayout(self.loaning_date_groupBox)
+        self.loaning_date_groupBox_gridLayout.setContentsMargins(0, -1, 0, -1)
+        self.groupBoxes_to_clear.append(self.loaning_date_groupBox_gridLayout)
+
         # book type
         self.book_type_groupBox = QtWidgets.QGroupBox(self.groupBoxes_splitter)
+        self.book_type_groupBox.setEnabled(True)
         self.book_type_groupBox.setAlignment(QtCore.Qt.AlignCenter)
         self.book_type_groupBox.setFlat(True)
         self.book_type_groupBox.setTitle("סוג הספר")
@@ -406,18 +467,6 @@ class MainWindow(QMainWindow):
         self.book_type_groupBox_gridLayout = QGridLayout(self.book_type_groupBox)
         self.book_type_groupBox_gridLayout.setContentsMargins(0, -1, 0, -1)
         self.groupBoxes_to_clear.append(self.book_type_groupBox_gridLayout)
-
-        # loaning date
-        self.loaning_date_groupBox = QtWidgets.QGroupBox(self.groupBoxes_splitter)
-        self.loaning_date_groupBox.setEnabled(True)
-        self.loaning_date_groupBox.setAlignment(QtCore.Qt.AlignCenter)
-        self.loaning_date_groupBox.setFlat(True)
-        self.loaning_date_groupBox.setTitle("תאריך השאלה")
-        self.books_details_groupBoxes.append(self.loaning_date_groupBox)
-
-        self.loaning_date_groupBox_gridLayout = QGridLayout(self.loaning_date_groupBox)
-        self.loaning_date_groupBox_gridLayout.setContentsMargins(0, -1, 0, -1)
-        self.groupBoxes_to_clear.append(self.loaning_date_groupBox_gridLayout)
 
         # book condition
         self.book_condition_groupBox = QtWidgets.QGroupBox(self.groupBoxes_splitter)
@@ -436,6 +485,7 @@ class MainWindow(QMainWindow):
         self.is_borrowed_groupBox.setAlignment(QtCore.Qt.AlignCenter)
         self.is_borrowed_groupBox.setFlat(True)
         self.is_borrowed_groupBox.setTitle("מושאל")
+        self.is_borrowed_groupBox.setFixedWidth(50)
         self.books_details_groupBoxes.append(self.is_borrowed_groupBox)
 
         self.is_borrowed_groupBox_gridLayout = QGridLayout(self.is_borrowed_groupBox)
@@ -546,6 +596,7 @@ class MainWindow(QMainWindow):
         self.book_id_groupBox.setAlignment(QtCore.Qt.AlignCenter)
         self.book_id_groupBox.setFlat(True)
         self.book_id_groupBox.setTitle("מזהה")
+        self.book_id_groupBox.setFixedWidth(40)
         self.books_details_groupBoxes.append(self.book_id_groupBox)
 
         self.book_id_groupBox_gridLayout = QGridLayout(self.book_id_groupBox)
@@ -557,6 +608,7 @@ class MainWindow(QMainWindow):
         self.tools_groupBox.setAlignment(QtCore.Qt.AlignCenter)
         self.tools_groupBox.setFlat(True)
         self.tools_groupBox.setTitle("כלים")
+        self.tools_groupBox.setFixedWidth(32)
         self.tools_groupBox.setObjectName("tools_groupBox")
         self.books_details_groupBoxes.append(self.tools_groupBox)
 
@@ -566,94 +618,206 @@ class MainWindow(QMainWindow):
 
     def toggle_limit_books_display(self):
         self.limit_books_display_amount = False
+        self.selected_books_dictionary = {"books": []}
+        self.select_all_on = False
         self.load_archive()
-        self.limit_books_display_amount = True
-
+        if not self.multiple_books_editing_mode:
+            print("דדגגג")
+            self.limit_books_display_amount = True
 
     def load_archive(self):
         self.clear_books_details_groupBoxes()
         self.calculate_each_book_amount_in_the_archive()
         # Reset the amount of books displayed
         Rows_of_books_entered_the_display = 0
-        for book in books_in_archive():
+
+        self.select_all_check_boxes = QCheckBox()
+        self.select_all_check_boxes.setToolTip("בחר הכל/נקה הכל")
+        self.select_all_check_boxes.setFixedSize(21, 21)
+
+
+        self.all_books_in_display = {"books": []}
+
+        if self.multiple_books_editing_mode:
+            for groupBox in self.books_details_groupBoxes:
+                if groupBox.objectName() == "tools_groupBox":
+                    groupBox.layout().addWidget(self.select_all_check_boxes)
+                    self.select_all_check_boxes.clicked.connect(self.select_all)
+                else:
+                    blank_lineedit = QLineEdit()
+                    blank_lineedit.setEnabled(False)
+                    blank_lineedit.setFrame(False)
+                    groupBox.layout().addWidget(blank_lineedit)
+
+        jump_book = False
+
+        if not self.selected_books_dictionary["books"]:
+            self.edit_books_details_button.setEnabled(False)
+            self.Borrow_books_button.setEnabled(False)
+            self.delete_books_button.setEnabled(False)
+        for book_in_archive in books_in_archive():
+
+            if not jump_book:
+                jump_book = True
+            else:
+                jump_book = False
+                """
+                    edit_line.setStyleSheet("background-color: #e6e3e3;")
+                """
             # A condition that compares the content written in the search to the details of the books
             if (
-                    (self.line_edit_book_id.text() == "" or self.line_edit_book_id.text() in book["book_id"]) and
-                    (self.line_edit_book_title.text() == "" or self.line_edit_book_title.text() in book["book_title"]) and
-                    (self.book_type_combo_box.currentText() == "בחר סוג ספר" or self.book_type_combo_box.currentText() in book["book_type"]) and
-                    (self.line_edit_author.text() == "" or self.line_edit_author.text() in book["author"]) and
-                    (self.line_edit_publisher.text() == "" or self.line_edit_publisher.text() in book["publisher"]) and
-                    (self.line_edit_series_name.text() == "" or self.line_edit_series_name.text() in book["series_name"]) and
-                    (self.line_edit_series_part.text() == "" or self.line_edit_series_part.text() in book["series_part"]) and
-                    (self.line_edit_grade.text() == "" or self.line_edit_grade.text() in book["grade"]) and
-                    (self.line_edit_age_group.text() == "" or self.line_edit_age_group.text() in book["age_group"]) and
-                    (self.is_borrowed_combo_box.currentText() == "האם מושאל" or self.is_borrowed_combo_box.currentText() in book["is_borrowed"]) and
-                    (self.line_edit_borrower_name.text() == "" or self.line_edit_borrower_name.text() in book["borrower_name"]) and
-                    (self.line_edit_loaning_date.text() == "" or self.line_edit_loaning_date.text() in book["loaning_date"]) and
-                    (self.line_edit_shelf.text() == "" or self.line_edit_shelf.text() in book["shelf"]) and
-                    (self.line_edit_amount_in_archive.text() == "" or self.line_edit_amount_in_archive.text() in book["amount_in_archive"]) and
-                    (self.book_condition_combo_box.currentText() == "בחר מצב ספר" or self.book_condition_combo_box.currentText() in book["book_condition"]) and
-                    (self.line_edit_borrower_id.text() == "" or self.line_edit_borrower_id.text() in book["borrower_id"]) and
-                    (self.line_edit_remarks.text() == "" or self.line_edit_remarks.text() in book["remarks"])
+                    (self.line_edit_book_id.text() == "" or self.line_edit_book_id.text() in book_in_archive["book_id"]) and
+                    (self.line_edit_book_title.text() == "" or self.line_edit_book_title.text() in book_in_archive[
+                        "book_title"]) and
+                    (
+                            self.book_type_combo_box.currentText() == "בחר סוג ספר" or self.book_type_combo_box.currentText() in
+                            book_in_archive["book_type"]) and
+                    (self.line_edit_author.text() == "" or self.line_edit_author.text() in book_in_archive["author"]) and
+                    (self.line_edit_publisher.text() == "" or self.line_edit_publisher.text() in book_in_archive["publisher"]) and
+                    (self.line_edit_series_name.text() == "" or self.line_edit_series_name.text() in book_in_archive[
+                        "series_name"]) and
+                    (self.line_edit_series_part.text() == "" or self.line_edit_series_part.text() in book_in_archive[
+                        "series_part"]) and
+                    (self.line_edit_grade.text() == "" or self.line_edit_grade.text() in book_in_archive["grade"]) and
+                    (self.line_edit_age_group.text() == "" or self.line_edit_age_group.text() in book_in_archive["age_group"]) and
+                    (
+                            self.is_borrowed_combo_box.currentText() == "האם מושאל" or self.is_borrowed_combo_box.currentText() in
+                            book_in_archive["is_borrowed"]) and
+                    (self.line_edit_borrower_name.text() == "" or self.line_edit_borrower_name.text() in book_in_archive[
+                        "borrower_name"]) and
+                    (self.line_edit_loaning_date.text() == "" or self.line_edit_loaning_date.text() in book_in_archive[
+                        "loaning_date"]) and
+                    (self.line_edit_shelf.text() == "" or self.line_edit_shelf.text() in book_in_archive["shelf"]) and
+                    (self.line_edit_amount_in_archive.text() == "" or self.line_edit_amount_in_archive.text() in book_in_archive[
+                        "amount_in_archive"]) and
+                    (
+                            self.book_condition_combo_box.currentText() == "בחר מצב ספר" or self.book_condition_combo_box.currentText() in
+                            book_in_archive["book_condition"]) and
+                    (self.line_edit_borrower_id.text() == "" or self.line_edit_borrower_id.text() in book_in_archive[
+                        "borrower_id"]) and
+                    (self.line_edit_remarks.text() == "" or self.line_edit_remarks.text() in book_in_archive["remarks"])
             ):
 
-                # empty dictionary
-                book_data = {}
-                # Adding the book details to the dictionary
-                book_data["remarks"] = book["remarks"]
-                book_data["borrower_id"] = book["borrower_id"]
-                book_data["borrower_name"] = book["borrower_name"]
-                book_data["book_type"] = book["book_type"]
-                book_data["loaning_date"] = book["loaning_date"]
-                book_data["book_condition"] = book["book_condition"]
-                book_data["is_borrowed"] = book["is_borrowed"]
-                book_data["amount_in_archive"] = book["amount_in_archive"]
-                book_data["shelf"] = book["shelf"]
-                book_data["publisher"] = book["publisher"]
-                book_data["author"] = book["author"]
-                book_data["age_group"] = book["age_group"]
-                book_data["grade"] = book["grade"]
-                book_data["series_part"] = book["series_part"]
-                book_data["series_name"] = book["series_name"]
-                book_data["book_title"] = book["book_title"]
-                book_data["book_id"] = book["book_id"]
-
+                # יצירת משתנה רשימה ריקה לאחסון את ה-QLineEdit
+                line_edits = []
                 # A loop that goes through every detail in the dictionary and puts it inside QLineEdit
-                for key, value in enumerate(book_data):
-                    edit_line = QLineEdit(book_data[value], self)
+                for key, value in enumerate(book_in_archive):
+                    edit_line = QLineEdit(book_in_archive[value], self)
                     edit_line.setReadOnly(True)
-                    edit_line.setToolTip(str(self.books_details_groupBoxes[key].title()) + ": " + str(book_data[value]))
-                    self.books_details_groupBoxes[key].layout().addWidget(edit_line)
-                    # A condition that changes the background color of is_borrowed if the book is borrowed
-                    if value == "is_borrowed":
-                        edit_line.setStyleSheet("background-color: #EF9A9A;")
-                        if book_data[value] == "לא":
-                            edit_line.setStyleSheet("background-color: #C5E1A5;")
+                    edit_line.setFixedHeight(20)
+                    edit_line.setAlignment(QtCore.Qt.AlignCenter)
+                    # Creating a floating tip when the mouse cursor is placed on the box
+                    edit_line.setToolTip(str(self.books_details_groupBoxes[key].title()) + ": " + str(book_in_archive[value]))
+                    # הוספת ה-QLineEdit לרשימה
+                    line_edits.append(edit_line)
 
-                # Creating a book_setting button
-                edit_button = QPushButton(QIcon(r'dependence\images\book_setting.png'), '')
-                edit_button.setStyleSheet(
-                    'background-color: transparent; border: 1px solid #d0d0d0; border-radius: 3px;')
-                edit_button.setFixedSize(21, 21)
-                edit_button.clicked.connect(lambda state, this_book_id=book["book_id"]: self.edit_book_data(this_book_id))
-                for groupBox in self.books_details_groupBoxes:
-                    if groupBox.objectName() == "tools_groupBox":
-                        groupBox.layout().addWidget(edit_button)
+                    if not jump_book:
+                        edit_line.setStyleSheet("background-color: #e3e3e3;")
+
+                    if book_in_archive["is_borrowed"] == "כן":
+                        edit_line.setStyleSheet("background-color: #EF9A9A;")
+
+                # הוספת ה-QLineEdit ל-groupBoxes מהסוף להתחלה
+                for i in range(len(line_edits)):
+                    g = i
+                    i += 1
+                    self.books_details_groupBoxes[g].layout().addWidget(line_edits[-i])
+
+
+                if not self.multiple_books_editing_mode:
+                    # Creating a book_setting button
+                    edit_button = QPushButton(QIcon(r'dependence\images\book_setting.png'), '')
+                    edit_button.setStyleSheet(
+                        'background-color: transparent; border: 1px solid #d0d0d0; border-radius: 3px;')
+                    edit_button.setToolTip("ערוך פרטי ספר: " + str(book_in_archive["book_id"]))
+                    edit_button.setFixedSize(20, 20)
+                    edit_button.setStyleSheet(
+                        "QPushButton {"
+                        "   background-color: transparent;"
+                        "   border: 1px solid #787878;"  # frame color
+                        "   border-radius: 3px;"  # Rounding the button frame
+                        "}"
+                        "QPushButton:hover {"
+                        "   border: 1px solid #292929;"  # The frame color when the mouse hovers over the button
+                        "}"
+                        "QPushButton:hover:pressed {"
+                        "   border: 1px solid #000000;"  # The frame color when the mouse clicks the button
+                        "}"
+                    )
+                    edit_button.clicked.connect(
+                        lambda state, this_book_id=book_in_archive["book_id"]: self.edit_book_data(this_book_id))
+
+                    for groupBox in self.books_details_groupBoxes:
+                        if groupBox.objectName() == "tools_groupBox":
+                            groupBox.layout().addWidget(edit_button)
+
+                else:  # אם אנחנו במצב בחירה מרובה
+                    self.multiple_books_check_boxes = QCheckBox()
+                    self.multiple_books_check_boxes.setToolTip("בחר ספר: " + str(book_in_archive["book_id"]))
+                    self.multiple_books_check_boxes.setFixedSize(20, 20)
+
+                    # אם הספר הנוכחי הינו ברשימת הנבחרים אז הפעל את כפתורו
+                    for book in self.selected_books_dictionary["books"]:
+                        if book["book_id"] == book_in_archive["book_id"]:
+                            print("sss")
+                            self.multiple_books_check_boxes.setCheckState(Qt.Checked)
+                            break
+
+                    # שיוך לחיצת הכפתור בחירה אל פעולת ההוספה
+                    self.multiple_books_check_boxes.stateChanged.connect(
+                        partial(self.handle_checkbox_state_change, book_in_archive)
+                    )
+
+                    # יצירת כפתור בחירה אל כל אחד מהספרים
+                    for groupBox in self.books_details_groupBoxes:
+                        if groupBox.objectName() == "tools_groupBox":
+                            groupBox.layout().addWidget(self.multiple_books_check_boxes)
+
+                    # מכניס את הספר הנוכחי המוצג אל רשימת הספרים המוצגים בלבד
+                    self.all_books_in_display["books"].append(book_in_archive)
 
                 # Limit display to prevent delays, prat 1 (of 2)
                 Rows_of_books_entered_the_display += 1
+
+            # Update the status bar
+            self.status_bar.showMessage(
+                f"כמות ספרים מוצגת: ({Rows_of_books_entered_the_display}/{get_number_of_books_in_archive()})")
+
+            # If there are no books to display then there is no need to display the groupBoxes
+            self.Main_splitter.show()
+            if int(Rows_of_books_entered_the_display) == 0:
+                self.Main_splitter.hide()
+
+            # If there are not enough books to display then there is no need to display the button and the label should be displayed
+            if Rows_of_books_entered_the_display <= self.limit_books_display:
+                self.Reveal_all_books_button.close()
+                self.no_books_to_dislpay_label.show()
 
             # Limit display to prevent delays, prat 2 (of 2)
             if not self.limit_books_display_amount:
                 # Don't show Reveal_all_books_button if limit_books_display_amount
                 self.Reveal_all_books_button.close()
+                self.no_books_to_dislpay_label.show()
                 # go back to the start in the loop
                 continue
 
             # If we have reached the display limit then stop the loop and display the button Reveal_all_books_button
             if Rows_of_books_entered_the_display == self.limit_books_display:
+                #if not self.multiple_books_editing_mode:
                 self.Reveal_all_books_button.show()
+                self.no_books_to_dislpay_label.close()
                 break
+
+
+        # בדיקה אם כל הספרים ממילון א נמצאים גם במילון ב
+        books_a = [book["book_id"] for book in self.all_books_in_display["books"]]
+        books_b = [book["book_id"] for book in self.selected_books_dictionary["books"]]
+        if set(books_a).issubset(books_b):
+            print("כולם כאן")
+            self.select_all_check_boxes.setCheckState(Qt.Checked)
+        else:
+            print("לא כולם כאן")
+            self.select_all_check_boxes.setCheckState(Qt.Unchecked)
 
         # Creating an empty label inside each groupBox to attach the lineedits
         for groupBox in self.books_details_groupBoxes:
@@ -661,13 +825,213 @@ class MainWindow(QMainWindow):
             name_label.setAlignment(QtCore.Qt.AlignTop)
             groupBox.layout().addWidget(name_label)
 
+        if not books_in_archive():
+            self.Main_splitter.hide()
+            self.Reveal_all_books_button.close()
+            self.no_books_to_dislpay_label.show()
 
-        """
-        # A loop that hides all the G from the display,
-        # this loop is useful in the future for displaying the label "No books matching the search were found"
-        for groupBox in self.books_details_groupBoxes:
-            groupBox.setVisible(False)  # להסתיר את הרכיב
-        """
+    def select_all(self):
+        if self.select_all_check_boxes.isChecked():
+            self.select_all_on = True
+            self.select_all_check_boxes.setCheckState(Qt.Checked)
+            for book in self.all_books_in_display["books"]:
+                if book not in self.selected_books_dictionary["books"]:
+                    self.selected_books_dictionary["books"].append(book)
+
+        else:
+            self.select_all_on = False
+            self.select_all_check_boxes.setCheckState(Qt.Unchecked)
+            for book in self.all_books_in_display["books"]:
+                if book in self.selected_books_dictionary["books"]:
+                    self.selected_books_dictionary["books"].remove(book)
+
+        self.update_multiple_books_tools()
+        self.load_archive()
+
+    def handle_checkbox_state_change(self, checked_book_details):
+        if checked_book_details not in self.selected_books_dictionary["books"]:
+            self.selected_books_dictionary["books"].append(checked_book_details)
+        else:
+            self.selected_books_dictionary["books"].remove(checked_book_details)
+            self.select_all_on = False
+            self.select_all_check_boxes.setCheckState(Qt.Unchecked)
+
+        # בדיקה אם כל הספרים ממילון א נמצאים גם במילון ב
+        books_a = [book["book_id"] for book in self.all_books_in_display["books"]]
+        books_b = [book["book_id"] for book in self.selected_books_dictionary["books"]]
+        if set(books_a).issubset(books_b):
+            print("כולם כאן")
+            self.select_all_check_boxes.setCheckState(Qt.Checked)
+        else:
+            print("לא כולם כאן")
+            self.select_all_check_boxes.setCheckState(Qt.Unchecked)
+
+        self.update_multiple_books_tools()
+
+    def update_multiple_books_tools(self):
+        # בודק האם יש ספרים נבחרים ואז מפעיל את הכפתורים
+        self.edit_books_details_button.setEnabled(False)
+        self.Borrow_books_button.setEnabled(False)
+        self.delete_books_button.setEnabled(False)
+        if self.selected_books_dictionary["books"]:
+            self.edit_books_details_button.setEnabled(True)
+            self.Borrow_books_button.setEnabled(True)
+            self.delete_books_button.setEnabled(True)
+
+        # disable Borrow_books_button if the user choose books with different is_borrowed values
+        if self.selected_books_dictionary["books"]:
+            is_borrowed_values = [book["is_borrowed"] for book in self.selected_books_dictionary["books"]]
+            self.Borrow_books_button.setEnabled(all(value == is_borrowed_values[0] for value in is_borrowed_values))
+            if is_borrowed_values[0] == "כן":
+                self.selected_books_borrowed = True
+            else:
+                self.selected_books_borrowed = False
+
+    def create_multiple_books_tools_groupBox(self):
+        self.all_multiple_books_buttons = []
+        # Create groupBox for the tools
+        self.multiple_books_tools_groupBox = QtWidgets.QGroupBox(self)
+        self.multiple_books_tools_groupBox.setLayoutDirection(QtCore.Qt.RightToLeft)
+        self.multiple_books_tools_groupBox.setTitle("כלי עריכת ספרים מרובים")
+        self.multiple_books_tools_groupBox.setObjectName("multiple_books_tools_groupBox")
+        self.multiple_books_tools_groupBox.setContentsMargins(0, 5, 0, 0)
+
+        # Add the components to MainWindow_layout
+        self.MainWindow_layout.addWidget(self.multiple_books_tools_groupBox)
+        # Create a layout to gut the components inside
+        self.horizontalLayout = QtWidgets.QHBoxLayout(self.multiple_books_tools_groupBox)
+        self.horizontalLayout.setObjectName("horizontalLayout")
+
+        # create edit_books_details_button
+        self.edit_books_details_button = QtWidgets.QToolButton(self.multiple_books_tools_groupBox)
+        self.edit_books_details_button.setObjectName("multiple_books_tools_toolButton1")
+        self.edit_books_details_button.setToolTip("ערוך פרטי ספרים נבחרים")
+        self.edit_books_details_button.setFixedSize(40, 40)
+        self.edit_books_details_button.setIconSize(self.edit_books_details_button.size())
+        self.edit_books_details_button_pixmap = QPixmap('dependence/images/edit_books_details.png')
+        self.edit_books_details_button.setIcon(QIcon(self.edit_books_details_button_pixmap))
+        self.edit_books_details_button.clicked.connect(self.print_books_in_check_boxes)
+        self.horizontalLayout.addWidget(self.edit_books_details_button)
+        self.all_multiple_books_buttons.append(self.edit_books_details_button)
+
+        # create Borrow_books_button
+        self.Borrow_books_button = QtWidgets.QToolButton(self.multiple_books_tools_groupBox)
+        self.Borrow_books_button.setObjectName("multiple_books_tools_toolButton2")
+        self.Borrow_books_button.setToolTip("השאל ספרים נבחרים")
+        self.Borrow_books_button.setFixedSize(40, 40)
+        self.Borrow_books_button.setIconSize(self.Borrow_books_button.size())
+        self.Borrow_books_button_pixmap = QPixmap('dependence/images/Borrow_books_button.png')
+        self.Borrow_books_button.setIcon(QIcon(self.Borrow_books_button_pixmap))
+        self.Borrow_books_button.clicked.connect(lambda: self.borrow_books(self.selected_books_dictionary))
+        self.horizontalLayout.addWidget(self.Borrow_books_button)
+        self.all_multiple_books_buttons.append(self.Borrow_books_button)
+
+        # create delete_books_button
+        self.delete_books_button = QtWidgets.QToolButton(self.multiple_books_tools_groupBox)
+        self.delete_books_button.setObjectName("multiple_books_tools_toolButton3")
+        self.delete_books_button.setToolTip("מחק ספרים נבחרים מהארכיון")
+        self.delete_books_button.setFixedSize(40, 40)
+        self.delete_books_button.setIconSize(self.delete_books_button.size())
+        self.delete_books_button_pixmap = QPixmap('dependence/images/delete_books.png')
+        self.delete_books_button.setIcon(QIcon(self.delete_books_button_pixmap))
+        self.delete_books_button.clicked.connect(lambda: self.delete_books(self.selected_books_dictionary))
+        self.horizontalLayout.addWidget(self.delete_books_button)
+        self.all_multiple_books_buttons.append(self.delete_books_button)
+
+        for button in self.all_multiple_books_buttons:
+            button.setStyleSheet(
+                '''
+                QToolButton {
+                    border: 1px solid #a8a8a8;
+                    border-radius: 3px
+                }
+                QToolButton:hover {
+                    border: 1px solid #3b3b3b;
+                    border-radius: 3px;
+                }
+                QToolButton:hover:pressed {
+                    border: 1px solid #000000;
+                }
+                '''
+            )
+
+    def print_books_in_check_boxes(self):
+        print(len(self.selected_books_dictionary["books"]))
+
+    def borrow_books(self, books_to_borrow):
+        if not self.selected_books_borrowed:
+            Borrower_details = self.open_Borrower_details_dialog("")
+            archive_file_content = read_archive_json()
+            for book in archive_file_content["books"]:
+                for book1 in books_to_borrow["books"]:
+                    if book["book_id"] == book1["book_id"]:
+                        if Borrower_details.Book_loan_approval:
+                            book['is_borrowed'] = "כן"
+                            # add role the value borrower_name
+                            Borrower_details_role = " (" + Borrower_details.role + ")"
+                            if Borrower_details.role == " (ללא)":
+                                Borrower_details_role = ""
+                            book[
+                                'borrower_name'] = Borrower_details.first_name + " " + Borrower_details.last_name + Borrower_details_role
+                            # fill the value borrower_id
+                            book['borrower_id'] = Borrower_details.borrower_id
+                            # fill the value remarks
+                            if Borrower_details.remarks == "":
+                                book['remarks'] = book1["remarks"]
+                            else:
+                                book['remarks'] = Borrower_details.remarks
+                            # fill the value loaning_date
+                            current_date = datetime.date.today()
+                            formatted_date = current_date.strftime("%d/%m/%Y")
+                            book['loaning_date'] = str(formatted_date)
+                            self.selected_books_dictionary = {"books": []}
+                            self.selected_books_borrowed = True
+
+            # Update the information in the JSON file
+            write_update_to_the_archive_json(archive_file_content)
+        else:
+            archive_file_content = read_archive_json()
+            for book in archive_file_content["books"]:
+                for book1 in books_to_borrow["books"]:
+                    if book["book_id"] == book1["book_id"]:
+                        Is_book_returned_yes_clicked, Is_book_returned_delete_remarks = self.open_Is_book_returned_dialog(
+                            book1)
+                        if Is_book_returned_yes_clicked:
+                            book['is_borrowed'] = "לא"
+                            book['borrower_name'] = ""
+                            book['borrower_id'] = ""
+                            book['loaning_date'] = ""
+                            if Is_book_returned_delete_remarks:
+                                book['remarks'] = ""
+                            self.selected_books_dictionary = {"books": []}
+                            self.selected_books_borrowed = False
+
+            # Update the information in the JSON file
+            write_update_to_the_archive_json(archive_file_content)
+
+        self.load_archive()
+
+    def open_Is_book_returned_dialog(self, book_data):
+        yes_clicked = False
+        delete_remarks = False
+        Is_book_returned = Is_book_returned_dialog(book_data)
+        if Is_book_returned.exec_() == QDialog.Accepted:
+            yes_clicked = True
+            if Is_book_returned.delete_remarks_check_box.isChecked():
+                delete_remarks = True
+        return yes_clicked, delete_remarks
+
+    def open_Borrower_details_dialog(self, book_remarks):
+        Borrower_details = Borrower_details_dialog(book_remarks)
+        Borrower_details.exec_()
+        return Borrower_details
+
+    def delete_books(self, books_to_delete):
+        delete_book_by_its_id(books_to_delete)
+        self.selected_books_dictionary = {"books": []}
+        self.selected_books_borrowed = True
+        self.select_all_on = False
+        self.load_archive()
 
     def clear_books_details_groupBoxes(self):
         for groupBox in self.books_details_groupBoxes:
@@ -760,11 +1124,24 @@ class MainWindow(QMainWindow):
         Add_new_books.exec_()
         self.load_archive()
 
-    def clear_action_triggered(self):
-        pass
+    def edit_multiple_books_triggered(self):
+        self.selected_books_dictionary = {"books": []}
+        self.select_all_on = False
+        if self.multiple_books_editing_mode:
+            # Restore the mode of limiting the amount of books displayed
+            self.limit_books_display_amount = True
+            self.multiple_books_editing_mode = False
+            # close the multiple_books_tools_groupBox
+            self.multiple_books_tools_groupBox.hide()
+        else:
+            self.multiple_books_editing_mode = True
+            # close the multiple_books_tools_groupBox
+            self.multiple_books_tools_groupBox.show()
+        self.load_archive()
 
     def restore_names_triggered(self):
         pass
+
 
 class book_settings_dialog(QDialog):
     def __init__(self, book_data):
@@ -775,13 +1152,14 @@ class book_settings_dialog(QDialog):
     def Creating_a_book_settings_dialog_GUI(self, book_data):
         self.this_original_book_id = book_data["book_id"]
         self.setWindowTitle(f"הגדרות ספר {self.this_original_book_id}")
+        self.setWindowIcon(QIcon('dependence/images/book_setting.png'))
         self.setFixedSize(827, 208)
 
         # Create main frame for all components
         self.book_settings_dialog_main_frame = QFrame(self)
         self.book_settings_dialog_main_frame.setFrameShape(QFrame.StyledPanel)
-        #self.book_settings_dialog_main_frame.setFrameShape(QFrame.Panel)
-        #self.book_settings_dialog_main_frame.setFrameShape(QFrame.Box)
+        # self.book_settings_dialog_main_frame.setFrameShape(QFrame.Panel)
+        # self.book_settings_dialog_main_frame.setFrameShape(QFrame.Box)
         self.book_settings_dialog_main_frame.setFrameShadow(QFrame.Raised)
 
         # Organize the components inside the book_settings_dialog_main_frame in grid order
@@ -793,6 +1171,7 @@ class book_settings_dialog(QDialog):
         self.delete_book_button = QPushButton(self.book_settings_dialog_main_frame)
         self.delete_book_button.setGeometry(QtCore.QRect(20, 20, 150, 150))
         self.delete_book_button.clicked.connect(lambda: self.delete_this_book(book_data))
+        self.delete_book_button.setToolTip("מחק ספר זה מהארכיון")
         self.delete_book_button_pixmap = QPixmap('dependence/images/delete_book.png')
         self.delete_book_button.setIconSize(self.delete_book_button.size())
         self.delete_book_button.setIcon(QIcon(self.delete_book_button_pixmap))
@@ -801,6 +1180,7 @@ class book_settings_dialog(QDialog):
         self.duplicate_book_button = QPushButton(self.book_settings_dialog_main_frame)
         self.duplicate_book_button.setGeometry(QtCore.QRect(225, 20, 150, 150))
         self.duplicate_book_button.clicked.connect(lambda: self.open_duplicate_book(book_data))
+        self.duplicate_book_button.setToolTip("שכפל ספר זה")
         self.duplicate_book_button_pixmap = QPixmap('dependence/images/add_book.png')
         self.duplicate_book_button.setIconSize(self.duplicate_book_button.size())
         self.duplicate_book_button.setIcon(QIcon(self.duplicate_book_button_pixmap))
@@ -809,10 +1189,12 @@ class book_settings_dialog(QDialog):
         self.Borrow_book_button = QPushButton(self.book_settings_dialog_main_frame)
         self.Borrow_book_button.setGeometry(QtCore.QRect(430, 20, 150, 150))
         self.Borrow_book_button.clicked.connect(lambda: self.lend_or_return_book(book_data))
+        self.Borrow_book_button.setToolTip("החזר את הספר")
         self.Borrow_book_button_pixmap = QPixmap('dependence/images/nook_return.png')
         self.Borrow_book_button.setIconSize(self.Borrow_book_button.size())
         self.Borrow_book_button.setIcon(QIcon(self.Borrow_book_button_pixmap))
         if book_data["is_borrowed"] == "לא":
+            self.Borrow_book_button.setToolTip("השאל את הספר")
             self.Borrow_book_button_pixmap = QPixmap('dependence/images/book_lend.png')
             self.Borrow_book_button.setIcon(QIcon(self.Borrow_book_button_pixmap))
 
@@ -820,6 +1202,7 @@ class book_settings_dialog(QDialog):
         self.edit_book_details_button = QPushButton(self.book_settings_dialog_main_frame)
         self.edit_book_details_button.setGeometry(QtCore.QRect(635, 20, 150, 150))
         self.edit_book_details_button.clicked.connect(lambda: self.open_editing_book_details_dialog(book_data))
+        self.edit_book_details_button.setToolTip("ערוך את פרטי הספר")
         self.edit_book_details_button_pixmap = QPixmap('dependence/images/edit_book.png')
         self.edit_book_details_button.setIconSize(self.edit_book_details_button.size())
         self.edit_book_details_button.setIcon(QIcon(self.edit_book_details_button_pixmap))
@@ -846,7 +1229,9 @@ class book_settings_dialog(QDialog):
             )
 
     def open_editing_book_details_dialog(self, book_data):
+        # close the book settings dialog
         self.close()
+        # open the editing_book_details dialog
         editing_book_details = editing_book_details_dialog(book_data)
         editing_book_details.exec_()
 
@@ -867,7 +1252,8 @@ class book_settings_dialog(QDialog):
                         Borrower_details.role = " (" + Borrower_details.role + ")"
                         if Borrower_details.role == " (ללא)":
                             Borrower_details.role = ""
-                        book['borrower_name'] = Borrower_details.first_name + " " + Borrower_details.last_name + Borrower_details.role
+                        book[
+                            'borrower_name'] = Borrower_details.first_name + " " + Borrower_details.last_name + Borrower_details.role
                         # fill the value borrower_id
                         book['borrower_id'] = Borrower_details.borrower_id
                         # fill the value remarks
@@ -878,7 +1264,8 @@ class book_settings_dialog(QDialog):
                         book['loaning_date'] = str(formatted_date)
                 # If the value is_borrowed is positive
                 elif book['is_borrowed'] == "כן":
-                    Is_book_returned_yes_clicked, Is_book_returned_delete_remarks = self.open_Is_book_returned_dialog(book_data)
+                    Is_book_returned_yes_clicked, Is_book_returned_delete_remarks = self.open_Is_book_returned_dialog(
+                        book_data)
                     if Is_book_returned_yes_clicked:
                         book['is_borrowed'] = "לא"
                         book['borrower_name'] = ""
@@ -907,20 +1294,26 @@ class book_settings_dialog(QDialog):
 
     def delete_this_book(self, book_data):
         self.close()
-        this_book_id = [book_data["book_id"]]
+        temp_dictionary = {
+            "books": [book_data]
+        }
         # Use this function to delete a book by its id
-        delete_book_by_id(this_book_id)
+        delete_book_by_its_id(temp_dictionary)
 
     def open_duplicate_book(self, book_data):
         self.close()
         Duplicate_book = Duplicate_book_Dialog(book_data)
         Duplicate_book.exec_()
 
+
 class Duplicate_book_Dialog(QDialog):
     def __init__(self, book_data):
         super().__init__()
 
+        self.book_condition = None
+        self.remarks = None
         self.setWindowTitle("שכפול הספר")
+        self.setWindowIcon(QIcon('dependence/images/add_book.png'))
         self.setFixedSize(311, 457)
 
         self.initUI(book_data)
@@ -1099,7 +1492,6 @@ class Duplicate_book_Dialog(QDialog):
         self.OK_and_Cancel_buttonBox.rejected.connect(self.reject)  # type: ignore
         QtCore.QMetaObject.connectSlotsByName(self)
 
-
     def Duplicate_book_Ok_clicked(self):
         # A function to generate a 4-digit random number
         def generate_random_number():
@@ -1151,23 +1543,23 @@ class Duplicate_book_Dialog(QDialog):
         archive_file_content = read_archive_json()
         # Create a new book object
         new_book = {
-            "remarks": self.remarks,
-            "book_condition": self.book_condition,
-            "amount_in_archive": "",
+            "book_id": self.book_id,
+            "book_title": self.book_title,
+            "series_name": self.series_name,
+            "series_part": self.series_part,
+            "grade": self.grade,
+            "age_group": self.age_group,
+            "author": self.author,
+            "publisher": self.publisher,
             "shelf": self.shelf,
+            "amount_in_archive": "",
+            "is_borrowed": "לא",
+            "book_condition": self.book_condition,
+            "book_type": self.book_type,
             "loaning_date": "",
             "borrower_name": "",
             "borrower_id": "",
-            "is_borrowed": "לא",
-            "series_part": self.series_part,
-            "series_name": self.series_name,
-            "publisher": self.publisher,
-            "author": self.author,
-            "age_group": self.age_group,
-            "grade": self.grade,
-            "book_type": self.book_type,
-            "book_title": self.book_title,
-            "book_id": self.book_id
+            "remarks": self.remarks
         }
         # Add the new book to the dictionary variable that contains all the books
         archive_file_content['books'].append(new_book)
@@ -1323,10 +1715,12 @@ class editing_book_details_dialog(QDialog):
         # Close the dialog
         self.accept()
 
+
 class Add_new_books_dialog(QDialog):
     def __init__(self):
         super().__init__()
 
+        self.remarks = None
         self.Creating_a_add_new_books_dialog_GUI()
 
     def Creating_a_add_new_books_dialog_GUI(self):
@@ -1408,7 +1802,6 @@ class Add_new_books_dialog(QDialog):
         self.save_button.clicked.connect(self.save_button_clicked)
         layout.addWidget(self.save_button)
 
-
     def save_button_clicked(self):
         # A function to generate a 4-digit random number
         def generate_random_number():
@@ -1460,69 +1853,86 @@ class Add_new_books_dialog(QDialog):
         archive_file_content = read_archive_json()
         # Create a new book object
         new_book = {
-            "remarks": self.remarks,
-            "book_condition": self.book_condition,
-            "amount_in_archive": "",
+            "book_id": self.book_id,
+            "book_title": self.book_title,
+            "series_name": self.series_name,
+            "series_part": self.series_part,
+            "grade": self.grade,
+            "age_group": self.age_group,
+            "author": self.author,
+            "publisher": self.publisher,
             "shelf": self.shelf,
+            "amount_in_archive": "",
+            "is_borrowed": "לא",
+            "book_condition": self.book_condition,
+            "book_type": self.book_type,
             "loaning_date": "",
             "borrower_name": "",
             "borrower_id": "",
-            "is_borrowed": "לא",
-            "series_part": self.series_part,
-            "series_name": self.series_name,
-            "publisher": self.publisher,
-            "author": self.author,
-            "age_group": self.age_group,
-            "grade": self.grade,
-            "book_type": self.book_type,
-            "book_title": self.book_title,
-            "book_id": self.book_id
+            "remarks": self.remarks
         }
         # Add the new book to the dictionary variable that contains all the books
         archive_file_content['books'].append(new_book)
         # Update the file with the updated dictionary variable
         write_update_to_the_archive_json(archive_file_content)
 
+
 class Are_you_sure_window(QDialog):
-    def __init__(self, books_ids):
+    def __init__(self, books_to_delete):
         super().__init__()
 
-        self.Creating_a_Add_new_books_dialog_GUI(books_ids)
+        self.Creating_a_Add_new_books_dialog_GUI(books_to_delete)
 
-    def Creating_a_Add_new_books_dialog_GUI(self, books_ids):
+    def Creating_a_Add_new_books_dialog_GUI(self, books_to_delete):
         self.sure_to_delete = False
         List_of_books_awaiting_deletion_approval = []
         self.setWindowTitle('ספרים למחיקה')
         self.setFixedSize(600, 300)
         self.setWindowIcon(QIcon('dependence/images/delete_book.png'))
 
-        layout = QVBoxLayout(self)
+        verticalLayout = QVBoxLayout(self)
 
         # Create a label
         label = QLabel("האם אתה בטוח שברצונך להסיר את הספרים הבאים מן הארכיון:")
-        layout.addWidget(label)
+        verticalLayout.addWidget(label)
 
         # Add a scroll box
-        scroll_area = QScrollArea()
-        layout.addWidget(scroll_area)
+        scroll_area = QScrollArea(self)
+        scroll_area.setLayoutDirection(QtCore.Qt.RightToLeft)
+        scroll_area.setWidgetResizable(True)
+        verticalLayout.addWidget(scroll_area)
 
         # text box into the scroll box
         text_widget = QWidget()
-        scroll_area.setWidget(text_widget)
+        text_widget.setGeometry(QtCore.QRect(-241, 0, 804, 296))
+        text_widget.setObjectName("text_widget")
 
-        text_layout = QVBoxLayout(text_widget)
+        verticalLayout_3 = QtWidgets.QVBoxLayout(text_widget)
+        verticalLayout_3.setObjectName("verticalLayout_3")
 
-        archive_file_content = read_archive_json()
+        """
+        gridLayout = QtWidgets.QGridLayout(text_widget)
+        gridLayout.setObjectName("gridLayout")
+        """
 
-        for book in archive_file_content["books"]:
-            for id in books_ids:
-                if book['book_id'] == id:
-                    Book_details = (book['book_id'] + ", " + book['book_title'] + ", " + book['book_type'] + ", " + book['grade']
-                         + ", " + book['age_group'] + ", " + book['author'] + ", " + book['publisher']
-                         + ", " + book['series_name'] + ", " + book['series_part'] + ", " + book['shelf']
-                         + ", " + book['amount_in_archive'] + ", " + book['book_condition']
-                         + ", " + book['remarks'] + ", ")
-                    List_of_books_awaiting_deletion_approval.append(Book_details)
+        main_widget_in_scroll_area = QtWidgets.QWidget(text_widget)
+        sizePolicy = QtWidgets.QSizePolicy(QtWidgets.QSizePolicy.Preferred, QtWidgets.QSizePolicy.Fixed)
+        sizePolicy.setHorizontalStretch(0)
+        sizePolicy.setVerticalStretch(0)
+        sizePolicy.setHeightForWidth(main_widget_in_scroll_area.sizePolicy().hasHeightForWidth())
+        main_widget_in_scroll_area.setSizePolicy(sizePolicy)
+        main_widget_in_scroll_area.setObjectName("main_widget_in_scroll_area")
+
+        text_layout = QtWidgets.QVBoxLayout(main_widget_in_scroll_area)
+
+
+
+        for book in books_to_delete["books"]:
+            Book_details = ""
+            for key, value in book.items():
+                if not value == "":
+                    Book_details = Book_details + value + ", "
+            List_of_books_awaiting_deletion_approval.append(Book_details)
 
         # Adding the books details to the text box
         for name in List_of_books_awaiting_deletion_approval:
@@ -1530,35 +1940,52 @@ class Are_you_sure_window(QDialog):
             name_label.setAlignment(QtCore.Qt.AlignTop)
             text_layout.insertWidget(1, name_label)
 
-        text_widget.setLayout(text_layout)
-        scroll_area.setWidgetResizable(True)
+
+        verticalLayout_3.addWidget(main_widget_in_scroll_area)
+        label_3 = QLabel("", text_widget)
+        label_3.setObjectName("label_3")
+        verticalLayout_3.addWidget(label_3)
+
+
+
+        scroll_area.setWidget(text_widget)
+        verticalLayout.addWidget(scroll_area)
+
+        buttons_frame = QtWidgets.QFrame(self)
+        buttons_frame.setFrameShape(QtWidgets.QFrame.StyledPanel)
+        buttons_frame.setFrameShadow(QtWidgets.QFrame.Raised)
+        buttons_frame.setObjectName("buttons_frame")
 
         # row for buttons
-        buttons_layout = QHBoxLayout()
+        buttons_layout = QHBoxLayout(buttons_frame)
+        buttons_layout.setObjectName("horizontalLayout")
 
         # Added a "Yes" button
-        yes_button = QPushButton("כן", self)
+        yes_button = QPushButton(buttons_frame)
         yes_button.clicked.connect(self.on_yes_click)
-        # Added a "No" button
-        no_button = QPushButton("לא", self)
-        no_button.clicked.connect(self.accept)
-
-        # Adding the buttons to the button layout
+        yes_button.setText("כן")
         buttons_layout.addWidget(yes_button)
+
+        # Added a "No" button
+        no_button = QPushButton(buttons_frame)
+        no_button.clicked.connect(self.accept)
+        no_button.setText("לא")
         buttons_layout.addWidget(no_button)
 
-        layout.addLayout(buttons_layout)
+        # Adding the buttons to the button verticalLayout
+        verticalLayout.addWidget(buttons_frame)
 
-        self.setLayout(layout)
+        self.setLayout(verticalLayout)
 
     def on_yes_click(self):
         self.sure_to_delete = True
         self.accept()
 
+
 class Is_book_returned_dialog(QDialog):
     def __init__(self, book_data):
         super().__init__()
-        self.setWindowTitle("האם הספר מוחזר?")
+        self.setWindowTitle("?האם הספר מוחזר")
         self.resize(390, 163)
         self.setWindowIcon(QIcon('dependence/images/nook_return.png'))
 
@@ -1571,7 +1998,8 @@ class Is_book_returned_dialog(QDialog):
         current_book_borrower_name = book_data["borrower_name"]
         current_book_name = book_data["book_title"]
 
-        self.is_book_return_label = QLabel(f"האם התלמיד {current_book_borrower_name} החזיר את הספר \"{current_book_name}\"?", self.main_widget)
+        self.is_book_return_label = QLabel(f"האם {current_book_borrower_name} החזיר את הספר \"{current_book_name}\"?",
+                                           self.main_widget)
         self.is_book_return_label.setFont(font)
         self.verticalLayout.addWidget(self.is_book_return_label)
 
@@ -1589,10 +2017,13 @@ class Is_book_returned_dialog(QDialog):
 
         self.yes_and_no_button_box.accepted.connect(self.accept)
         self.yes_and_no_button_box.rejected.connect(self.reject)
+
+
 class Borrower_details_dialog(QDialog):
     def __init__(self, book_remarks):
         super().__init__()
 
+        self.remarks = None
         self.Creating_a_Borrower_details_dialog_GUI(book_remarks)
 
     def Creating_a_Borrower_details_dialog_GUI(self, book_remarks):
@@ -1622,7 +2053,7 @@ class Borrower_details_dialog(QDialog):
         self.formLayout.setObjectName("formLayout")
 
         self.Borrower_details_label = QtWidgets.QLabel(self.Borrower_details_frame)
-        self.Borrower_details_label.setAlignment(QtCore.Qt.AlignBottom|QtCore.Qt.AlignLeading|QtCore.Qt.AlignLeft)
+        self.Borrower_details_label.setAlignment(QtCore.Qt.AlignBottom | QtCore.Qt.AlignLeading | QtCore.Qt.AlignLeft)
         self.Borrower_details_label.setText("פרטי השואל (חובה):")
         self.Borrower_details_label.setObjectName("Borrower_details_label")
         self.formLayout.setWidget(1, QtWidgets.QFormLayout.FieldRole, self.Borrower_details_label)
@@ -1654,7 +2085,7 @@ class Borrower_details_dialog(QDialog):
         self.id_label = QtWidgets.QLabel(self.Borrower_details_frame)
         self.id_label.setStyleSheet("color: red;")
         self.id_label.setText("תעודת זהות (מומלץ):")
-        self.id_label.setAlignment(QtCore.Qt.AlignLeading|QtCore.Qt.AlignLeft|QtCore.Qt.AlignVCenter)
+        self.id_label.setAlignment(QtCore.Qt.AlignLeading | QtCore.Qt.AlignLeft | QtCore.Qt.AlignVCenter)
         self.id_label.setObjectName("id_label")
         self.formLayout.setWidget(4, QtWidgets.QFormLayout.FieldRole, self.id_label)
 
@@ -1680,7 +2111,7 @@ class Borrower_details_dialog(QDialog):
         self.role_label = QtWidgets.QLabel(self.Borrower_details_frame)
         self.role_label.setStyleSheet("color: red;")
         self.role_label.setText("תפקיד (מומלץ):")
-        self.role_label.setAlignment(QtCore.Qt.AlignLeading|QtCore.Qt.AlignLeft|QtCore.Qt.AlignVCenter)
+        self.role_label.setAlignment(QtCore.Qt.AlignLeading | QtCore.Qt.AlignLeft | QtCore.Qt.AlignVCenter)
         self.role_label.setObjectName("role_label")
         self.formLayout.setWidget(5, QtWidgets.QFormLayout.FieldRole, self.role_label)
 
@@ -1697,7 +2128,7 @@ class Borrower_details_dialog(QDialog):
 
         self.remarks_label = QtWidgets.QLabel(self.remarks_frame)
         self.remarks_label.setTextFormat(QtCore.Qt.AutoText)
-        self.remarks_label.setAlignment(QtCore.Qt.AlignBottom|QtCore.Qt.AlignLeading|QtCore.Qt.AlignLeft)
+        self.remarks_label.setAlignment(QtCore.Qt.AlignBottom | QtCore.Qt.AlignLeading | QtCore.Qt.AlignLeft)
         self.remarks_label.setText("הערות (אופציונלי):")
         self.remarks_label.setObjectName("remarks_label")
 
@@ -1706,6 +2137,7 @@ class Borrower_details_dialog(QDialog):
         self.remarks_lineEdit = QtWidgets.QLineEdit(self.remarks_frame)
         self.remarks_lineEdit.setObjectName("remarks_lineEdit")
         self.remarks_lineEdit.setText(book_remarks)
+        self.remarks_lineEdit.setPlaceholderText("תשאיר ריק ולא ישתנה התוכן הקיים")
 
         self.verticalLayout_3.addWidget(self.remarks_lineEdit)
         self.verticalLayout.addWidget(self.remarks_frame)
@@ -1721,11 +2153,13 @@ class Borrower_details_dialog(QDialog):
 
         self.gridLayout.addWidget(self.OK_and_Cancel_buttonBox, 1, 0, 1, 1)
 
+        self.OK_and_Cancel_buttonBox.accepted.connect(
+            partial(self.Ok_clicked, book_remarks)
+        )
         # Assign a function to clicking the "OK" button
-        self.OK_and_Cancel_buttonBox.accepted.connect(self.Ok_clicked)
         self.OK_and_Cancel_buttonBox.rejected.connect(self.reject)
 
-    def Ok_clicked(self):
+    def Ok_clicked(self, book_remarks):
         if (
                 self.first_name_lineEdit.text() == ""
                 or self.last_name_lineEdit.text() == ""
@@ -1736,7 +2170,11 @@ class Borrower_details_dialog(QDialog):
         self.first_name = self.first_name_lineEdit.text().strip()
         self.last_name = self.last_name_lineEdit.text().strip()
         self.borrower_id = self.id_lineEdit.text().strip()
-        self.remarks = self.remarks_lineEdit.text().strip()
+        self.remarks = self.remarks_lineEdit.text()
+        if self.remarks == "":
+            self.remarks = book_remarks.strip()
+        else:
+            self.remarks = self.remarks_lineEdit.text().strip()
         self.Book_loan_approval = True
         self.accept()
 
