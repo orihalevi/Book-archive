@@ -1,6 +1,3 @@
-"""
-Book Archive By Ori
-"""
 import sys
 import random
 import json
