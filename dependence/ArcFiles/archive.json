@@ -1234,6 +1234,25 @@
             "borrower_name": "",
             "borrower_id": "",
             "remarks": ""
+        },
+        {
+            "book_id": "6686",
+            "book_title": "",
+            "series_name": "",
+            "series_part": "",
+            "grade": "",
+            "age_group": "",
+            "author": "",
+            "publisher": "",
+            "shelf": "",
+            "amount_in_archive": "1",
+            "is_borrowed": "לא",
+            "book_condition": "לא נבחר",
+            "book_type": "לא נבחר",
+            "loaning_date": "",
+            "borrower_name": "",
+            "borrower_id": "",
+            "remarks": ""
         }
     ]
 }
